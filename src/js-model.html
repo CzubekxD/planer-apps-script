@@ -1,0 +1,615 @@
+// js-model — Model danych, daty (DATE_LIB), osoby i role, zapis/odczyt z Arkusza, uprawnienia (Perm)
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 1. MODEL
+const STORAGE_KEY = 'planer';
+const VIEW_KEY = 'planer.widok';
+const META_KEYS = ['problem','goal','kpi','baseline','benefit','scope','obeya','impediments'];
+const SPRINTY = ['1 tydz.','2 tyg.','3 tyg.','4 tyg.'];
+const TRYB = ['Stała data (zakres się zmienia)','Stały zakres (data jest prognozą)'];
+// Pola per metoda — klucze współdzielone, więc zmiana metody nie kasuje wpisanych wartości
+const METHODS = {
+  klasyczna: { label: 'Klasyczna (PMBOK / PRINCE2)', goal: 'Cel projektu', opis: 'Plan bazowy, bramki i tolerancje. Zobowiązaniem jest data i zakres.',
+    fields: [
+      { k: 'businessCase', l: 'Business case', t: 'area', ph: 'Dlaczego warto? Koszt vs korzyść, link do uzasadnienia' },
+      { k: 'deliverables', l: 'Produkty kluczowe', t: 'area', ph: 'Co oddajemy i po czym poznamy, że odebrane' },
+      { k: 'assumptions', l: 'Założenia i ograniczenia', t: 'area', ph: 'Budżet, dostępność ludzi, okna produkcyjne' },
+      { k: 'approval', l: 'Kto zatwierdza bramki', t: 'text', ph: 'np. Dyrektor zakładu' },
+      { k: 'gates', l: 'Rama bramek', t: 'select', o: ['Własna', 'APQP', 'VDA MLA'] },
+      { k: 'tolerance', l: 'Tolerancja terminu [dni]', t: 'text', ph: 'np. 10 — powyżej eskalacja' }
+    ],
+    km: [['Karta zatwierdzona', 0], ['Bramka: koncepcja', .25], ['Bramka: realizacja', .5], ['Bramka: wdrożenie', .8], ['Zamknięcie', 1]] },
+  a3: { label: 'A3 / PDCA', goal: 'Cel (stan docelowy)', opis: 'Jedna kartka, dialog z mentorem. Postęp to etapy PDCA.',
+    fields: [
+      { k: 'mentor', l: 'Mentor', t: 'text', ph: 'Kto prowadzi dialog A3' },
+      { k: 'pdca', l: 'Etap PDCA', t: 'select', o: ['P — Plan', 'D — Do', 'C — Check', 'A — Act'] },
+      { k: 'rootCause', l: 'Przyczyna źródłowa', t: 'select', o: ['Nieznana', 'Hipoteza', 'Potwierdzona'] },
+      { k: 'countermeasures', l: 'Kontrdziałania', t: 'area', ph: 'Działanie → kto → kiedy' },
+      { k: 'a3link', l: 'Wersja / link do A3', t: 'text', ph: 'v3 z 12.11 — link do Drive' }
+    ],
+    km: [['P: plan zatwierdzony', .2], ['D: kontrdziałania wdrożone', .6], ['C: wyniki sprawdzone', .85], ['A: standard i zamknięcie', 1]] },
+  dmaic: { label: 'DMAIC / Six Sigma', goal: 'Goal statement (SMART)', opis: 'Bramki (tollgates) z decyzją: kontynuuj / wstrzymaj / zatrzymaj.',
+    fields: [
+      { k: 'ctq', l: 'CTQ / Y', t: 'text', ph: 'Metryka krytyczna dla klienta' },
+      { k: 'secondary', l: 'Metryka wtórna', t: 'text', ph: 'Czego nie wolno pogorszyć' },
+      { k: 'stretch', l: 'Cel ambitny', t: 'text', ph: 'Stretch target' },
+      { k: 'processOwner', l: 'Właściciel procesu', t: 'text', ph: 'Przejmuje w fazie Control' },
+      { k: 'benefitType', l: 'Rodzaj korzyści', t: 'select', o: ['Twarda', 'Miękka', 'Unikanie kosztów'] },
+      { k: 'financeCheck', l: 'Walidacja finansów', t: 'text', ph: 'Kto i kiedy potwierdził' }
+    ],
+    km: [['Karta podpisana', 0], ['Tollgate D', .15], ['Tollgate M', .35], ['Tollgate A', .55], ['Tollgate I', .8], ['Tollgate C', .95], ['Przekazanie właścicielowi procesu', 1]] },
+  kaizen: { label: 'Kaizen (warsztat)', goal: 'Cel warsztatu', opis: 'Kilka dni na gembie + follow-up po 30 dniach. Projekt = data warsztatu.',
+    fields: [
+      { k: 'facilitator', l: 'Facylitator', t: 'text', ph: 'Kto prowadzi warsztat' },
+      { k: 'prework', l: 'Przygotowanie', t: 'area', ph: 'Dane bazowe, pomiary czasu, VSM, materiały' },
+      { k: 'kpiAfter', l: 'KPI po / po 30 dniach', t: 'text', ph: 'np. 32 min / 31 min' },
+      { k: 'actions30', l: 'Działania 30-dniowe', t: 'text', ph: 'np. 8 z 11 zamkniętych' },
+      { k: 'followOwner', l: 'Odpowiedzialny za follow-up', t: 'text', ph: 'Jedna osoba' }
+    ],
+    km: [['Karta zatwierdzona', 'start', -21], ['Dane bazowe zebrane', 'start', -7], ['Warsztat', 'start', 0], ['Prezentacja wyników', 'end', -1], ['Follow-up 30 dni', 'end', 30]] },
+  scrum: { label: 'Scrum', goal: 'Product Goal', opis: 'Stała kadencja sprintów. Data to prognoza albo zakres się dopasowuje.',
+    fields: [
+      { k: 'sprint', l: 'Długość sprintu', t: 'select', o: SPRINTY },
+      { k: 'planningMode', l: 'Tryb planowania', t: 'select', o: TRYB },
+      { k: 'sprintGoal', l: 'Bieżący Sprint Goal', t: 'text', ph: 'Co ma być prawdą na końcu sprintu' },
+      { k: 'nextReview', l: 'Najbliższy Sprint Review', t: 'date' },
+      { k: 'dod', l: 'Definition of Done', t: 'area', ph: 'Kiedy przyrost uznajemy za gotowy' }
+    ],
+    km: [['Start kadencji', 0], ['Wydanie 1', .33], ['Wydanie 2', .66], ['Product Goal osiągnięty', 1]] },
+  kanban: { label: 'Kanban (przepływ)', goal: 'Cel usługi', opis: 'Bez sprintów. Zobowiązanie = SLE, np. „85% w ≤ 20 dni”.',
+    fields: [
+      { k: 'workItem', l: 'Element pracy', t: 'text', ph: 'Co liczymy jako jeden (np. zlecenie zmiany)' },
+      { k: 'commitPoint', l: 'Punkt zobowiązania → dostarczenia', t: 'text', ph: 'np. „Zaakceptowane” → „Wdrożone”' },
+      { k: 'classOfService', l: 'Klasa usługi', t: 'select', o: ['Standard', 'Stała data', 'Expedite', 'Niematerialna'] },
+      { k: 'sle', l: 'SLE', t: 'text', ph: '85% w ≤ 20 dni' },
+      { k: 'wip', l: 'Limit WIP', t: 'text', ph: 'np. 3' },
+      { k: 'cadences', l: 'Kadencje', t: 'text', ph: 'Uzupełnianie: tydzień · przegląd usługi: 2 tyg.' }
+    ],
+    km: [['Zobowiązanie', 0], ['Dostarczenie', 1]] },
+  hybryda: { label: 'Hybryda (bramki + sprinty)', goal: 'Cel projektu', opis: 'Na zewnątrz bramki i tolerancje, w środku Scrum lub Kanban.',
+    fields: [
+      { k: 'businessCase', l: 'Business case', t: 'area', ph: 'Dlaczego warto? Koszt vs korzyść' },
+      { k: 'gates', l: 'Rama bramek', t: 'select', o: ['Własna', 'APQP', 'VDA MLA'] },
+      { k: 'execution', l: 'Wykonanie', t: 'select', o: ['Scrum', 'Kanban'] },
+      { k: 'sprint', l: 'Długość sprintu', t: 'select', o: SPRINTY },
+      { k: 'planningMode', l: 'Tryb planowania', t: 'select', o: TRYB },
+      { k: 'mvp', l: 'MVP / pierwsza wartość', t: 'text', ph: 'Co i kiedy daje pierwszą korzyść' },
+      { k: 'tolerance', l: 'Tolerancja terminu [dni]', t: 'text', ph: 'np. 10' },
+      { k: 'dod', l: 'Definition of Done', t: 'area', ph: 'Kiedy przyrost uznajemy za gotowy' }
+    ],
+    km: [['Karta zatwierdzona', 0], ['MVP', .35], ['Bramka wdrożenia', .7], ['Zamknięcie', 1]] }
+};
+const METHOD_KEYS = Object.keys(METHODS);
+const methodOf = p => METHODS[p && p.method] ? p.method : 'klasyczna';
+const RAG_VALUES = ['green','amber','red'];
+const GROUPS = ['team','stakeholders'];
+const UNASSIGNED = '— nieprzypisane —';
+const ALL_VIEW = '__wszystko__';          // widok „Wszystko”: wiersz na projekt
+const COLOR_ROLE = 'kupiec';              // w widoku „Wszystko” kolor klocka = osoba w tej roli
+// „Nie dotyczy”: rola nieobecna w projekcie (to nie luka). Bez pasa, bez koloru, bez WIP.
+const isNA = s => /^(n\.?\s?[ad]\.?|n\/[ad]|nie dotyczy|[-–—])$/i.test(cleanName(s));
+
+const AppState = {
+  projects: [],
+  tabs: [],
+  activeTab: '',
+  horizonMonths: 20,
+  wipLimit: 2,
+  viewRole: '',
+  version: null,
+  monthWidth: 120,
+  // Skala osi: 'month' = równe kolumny miesięcy, 'week'/'day' = liniowo px na dzień
+  scale: (() => { try { const v = localStorage.getItem('planer.skala'); return ['day','week','month'].includes(v) ? v : 'month'; } catch (e) { return 'month'; } })(),
+  rowHeight: 64,
+  labelWidth: 200,
+  blockOffsetY: 8,
+  minBlockWidth: 32,
+  globalStartDate: (() => {
+    // Oś zaczyna się od wybranego dnia (domyślnie dziś). Stary zapis „RRRR-MM” = 1. dzień miesiąca.
+    let d = new Date(); d.setHours(0,0,0,0);
+    try {
+      const v = localStorage.getItem('planer.od') || '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { const [y, m, dd] = v.split('-').map(Number); d = new Date(y, m - 1, dd); }
+      else if (/^\d{4}-\d{2}$/.test(v)) { const [y, m] = v.split('-').map(Number); d = new Date(y, m - 1, 1); }
+    } catch (e) {}
+    return d;
+  })(),
+  generateId: () => Math.random().toString(36).substring(2, 11)
+};
+
+document.documentElement.style.setProperty('--month-w', `${AppState.monthWidth}px`);
+document.documentElement.style.setProperty('--row-h', `${AppState.rowHeight}px`);
+document.documentElement.style.setProperty('--label-w', `${AppState.labelWidth}px`);
+
+// 2. POMOCNICZE
+const f = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cleanName = s => String(s || '').trim().replace(/\s+/g, ' ');
+const norm = s => cleanName(s).toLowerCase();
+const hueOf = s => { let h = 0; for (const ch of norm(s)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return h % 360; };
+const paintPerson = (el, name) => {
+  if (name) { el.classList.add('osoba-kolor'); el.style.setProperty('--h', hueOf(name)); }
+  else el.classList.add('bez-osoby');
+};
+
+// ===== DATE_LIB — czysta logika dat i osi (nic nie rysuje, nie dotyka AppState; testy: ?test) =====
+// Umowa: daty to lokalna północ; koniec projektu jest WYŁĄCZNY (projekt do 24.12 ma end = 25.12).
+const DATE_LIB = (() => {
+  const toISO = (date) => {
+    if (!date || isNaN(date.getTime())) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const fromISO = (s) => {
+    if (!s || typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const [y, m, d] = s.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    // odrzuć daty nieistniejące (np. 2026-02-30 nie może stać się po cichu 2 marca)
+    return (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d) ? date : null;
+  };
+  const monthsDiff = (d1, d2) => (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+  const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+  const addDays = (date, days) => { const d = new Date(date); d.setDate(d.getDate() + days); return d; };
+  // Liczy dni kalendarzowe, odporne na zmianę czasu (doba 23/25 h)
+  const diffDays = (d1, d2) => Math.round((Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate()) - Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate())) / 86400000);
+  const format = (date) => date ? `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}` : '—';
+  const isoWeek = (date) => {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3);          // czwartek tego tygodnia
+    const jan4 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round((diffDays(jan4, d) - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  };
+  // Oś: axis = { origin (dowolny dzień), pxPerDay (dni/tygodnie) albo null (miesiące), monthWidth }
+  // Miesiące mają równą szerokość, liczoną od 1. dnia miesiąca startu; origin środkiem miesiąca przesuwa oś o tę część.
+  const monthRaw = (date, base, mw) => (monthsDiff(base, date) + (date.getDate() - 1) / daysInMonth(date.getFullYear(), date.getMonth())) * mw;
+  const monthBase = origin => new Date(origin.getFullYear(), origin.getMonth(), 1);
+  const toPx = (date, axis) => {
+    if (!date) return 0;
+    if (axis.pxPerDay) return diffDays(axis.origin, date) * axis.pxPerDay;
+    const base = monthBase(axis.origin);
+    return Math.round(monthRaw(date, base, axis.monthWidth) - monthRaw(axis.origin, base, axis.monthWidth));
+  };
+  const fromPx = (px, axis) => {
+    if (axis.pxPerDay) return addDays(axis.origin, Math.round(px / axis.pxPerDay));
+    const base = monthBase(axis.origin);
+    px += monthRaw(axis.origin, base, axis.monthWidth);
+    const mDiff = Math.floor(px / axis.monthWidth);
+    const rem = px - mDiff * axis.monthWidth;
+    const target = new Date(base.getFullYear(), base.getMonth() + mDiff, 1);
+    const dm = daysInMonth(target.getFullYear(), target.getMonth());
+    target.setDate(Math.max(1, Math.min(dm, Math.round((rem / axis.monthWidth) * dm) + 1)));
+    return target;
+  };
+  return { toISO, fromISO, monthsDiff, daysInMonth, addDays, diffDays, format, isoWeek, toPx, fromPx, monthBase };
+})();
+// ===== KONIEC DATE_LIB =====
+
+const toLocalISO = DATE_LIB.toISO;
+const fromLocalISO = DATE_LIB.fromISO;
+const getMonthsDiff = DATE_LIB.monthsDiff;
+const daysInMonth = DATE_LIB.daysInMonth;
+const addDays = DATE_LIB.addDays;
+const diffDays = DATE_LIB.diffDays;
+const formatDate = DATE_LIB.format;
+const isoWeek = DATE_LIB.isoWeek;
+
+const SCALES = {
+  day:   { pxPerDay: 36, drawDays: 5 },
+  week:  { pxPerDay: 20, drawDays: 14 },
+  month: { pxPerDay: null, drawDays: null }
+};
+const pxPerDay = () => SCALES[AppState.scale].pxPerDay;
+const axisNow = () => ({ origin: AppState.globalStartDate, pxPerDay: pxPerDay(), monthWidth: AppState.monthWidth });
+const dateToPx = (date) => DATE_LIB.toPx(date, axisNow());
+const pxToDate = (px) => DATE_LIB.fromPx(px, axisNow());
+
+// Opóźnienie tylko dla projektów w trakcie (planowane nie mają planu pierwotnego)
+const delayDays = p => (p.status !== 'planned' && p.baselineEnd && p.end) ? diffDays(p.baselineEnd, p.end) : 0;
+// Koniec efektywny: dla zakończonych data zamknięcia (do obciążenia i przepływu)
+const effEnd = p => (p.status === 'done' && p.doneAt) ? new Date(Math.min(p.end, addDays(p.doneAt, 1))) : p.end;
+const viewEnd = () => new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + AppState.horizonMonths, 1);
+const trackWidth = () => dateToPx(viewEnd());
+// Domyślna szerokość klocka po pojedynczym kliknięciu (bez przeciągania)
+const defaultDrawPx = () => pxPerDay() ? SCALES[AppState.scale].drawDays * pxPerDay() : AppState.monthWidth;
+const hasDates = p => p.start && p.end;
+
+// UPRAWNIENIA — właściciel planu edytuje wszystko; inni tylko karty, w których są w „editors”.
+// To tylko interfejs. Prawdziwą blokadę robi savePlan w Code.gs.
+const parseEmails = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/))
+  .map(x => String(x).trim().toLowerCase()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
+const Perm = { user: '', isOwner: true, realUser: '', realOwner: true };   // real* = kim jesteś naprawdę (Podgląd jako zmienia tylko user/isOwner)
+const canEditCard = p => Perm.isOwner || (!!Perm.user && !!p && (p.editors || []).includes(Perm.user));
+const projectsOf = t => t.id === AppState.activeTab ? AppState.projects : t.projects;
+const canEditAny = () => Perm.isOwner || AppState.tabs.some(t => projectsOf(t).some(canEditCard));
+
+// PLAN_LIB (opis zmian + scalanie zapisu edytora) jest w PlanLib.gs — wstrzykuje go Index.html
+
+// 3. OSOBY I ROLE
+const teamOf = p => p.assignments.filter(a => a.group === 'team');
+const stakeOf = p => p.assignments.filter(a => a.group === 'stakeholders');
+
+function normAssign(a) {
+  if (!a || typeof a !== 'object') return null;
+  const person = cleanName(a.person);
+  if (!person) return null;
+  return { group: GROUPS.includes(a.group) ? a.group : 'team', role: cleanName(a.role) || 'Bez roli', person };
+}
+
+// Jednorazowa migracja starych pól (Kupiec/kategoria, PO, SM, Zespół, Sponsor, Interesariusze)
+function splitPeople(text, defRole) {
+  return String(text || '').split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).map(s => {
+    const m = s.match(/^([^:]{1,25}):\s*(.+)$/);
+    return m ? { role: cleanName(m[1]), person: cleanName(m[2]) } : { role: defRole, person: cleanName(s) };
+  }).filter(a => a.person.length > 1);
+}
+function migrate(p) {
+  const out = [];
+  const add = (group, list) => list.forEach(a => out.push({ group, ...a }));
+  if (p.team) add('team', [{ role: 'Kupiec', person: cleanName(p.team) }]);
+  add('team', splitPeople(p.po, 'PO'));
+  add('team', splitPeople(p.sm, 'Scrum Master'));
+  add('team', splitPeople(p.members, 'Zespół'));
+  add('stakeholders', splitPeople(p.sponsor, 'Sponsor'));
+  add('stakeholders', splitPeople(typeof p.stakeholders === 'string' ? p.stakeholders : '', 'Interesariusz'));
+  return out;
+}
+
+function allRoles() {
+  const m = new Map();
+  AppState.projects.forEach(p => {
+    const seen = new Set();
+    p.assignments.forEach(a => {
+      const k = norm(a.role);
+      if (!m.has(k)) m.set(k, { name: a.role, count: 0, group: a.group });
+      if (!seen.has(k) && !isNA(a.person)) { seen.add(k); m.get(k).count++; }
+    });
+  });
+  return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+}
+function allPersons() {
+  const m = new Map();
+  syncTab();
+  AppState.tabs.forEach(t => t.projects.forEach(p => p.assignments.forEach(a => { const k = norm(a.person); if (!m.has(k) && !isNA(a.person)) m.set(k, a.person); })));
+  return [...m.values()].sort((a, b) => a.localeCompare(b, 'pl'));
+}
+const roleGroup = role => {
+  const r = allRoles().find(x => norm(x.name) === norm(role));
+  return r ? r.group : 'team';
+};
+
+// Osoba w roli (pierwsza, bez „nie dotyczy”) — do koloru w widoku „Wszystko”
+const personInRole = (p, roleKey) => { const a = p.assignments.find(a => norm(a.role) === roleKey && !isNA(a.person)); return a ? a.person : ''; };
+const inView = p => hasDates(p) && p.end > AppState.globalStartDate && p.start < viewEnd();
+
+// Pasy osi. Widok roli: osoba = pas; „nieprzypisane” tylko gdy coś w nim jest; „nie dotyczy” liczone osobno (lanes.na).
+// Widok „Wszystko”: wiersz na projekt (po dacie startu) + pusty wiersz do rysowania nowego.
+function buildLanes() {
+  if (AppState.viewRole === ALL_VIEW) {
+    const items = AppState.projects.filter(p => inView(p) && (AppState.showDone || p.status !== 'done'))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    const out = items.map(p => ({ name: p.title, key: p.id, items: [p], color: personInRole(p, COLOR_ROLE), project: true }));
+    out.push({ name: '+ nowy projekt (narysuj tutaj)', key: '', items: [], unassigned: true, color: '' });
+    out.na = 0;
+    return out;
+  }
+  const roleKey = norm(AppState.viewRole);
+  const lanes = new Map();
+  const unassigned = { name: UNASSIGNED, key: '', items: [], unassigned: true };
+  let na = 0;
+  AppState.projects.filter(inView).forEach(p => {
+    const persons = new Map();
+    let naHere = false;
+    if (roleKey) p.assignments.forEach(a => {
+      if (norm(a.role) !== roleKey) return;
+      if (isNA(a.person)) { naHere = true; return; }
+      if (!persons.has(norm(a.person))) persons.set(norm(a.person), a.person);
+    });
+    if (!persons.size) { if (naHere) na++; else unassigned.items.push(p); return; }
+    persons.forEach((name, k) => {
+      if (!lanes.has(k)) lanes.set(k, { name, key: k, items: [], color: name });
+      lanes.get(k).items.push(p);
+    });
+  });
+  const out = [...lanes.values()].sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+  if (unassigned.items.length || !out.length) out.push(unassigned);   // pusty = ukryty (chyba że nie ma żadnego pasa)
+  out.na = na;
+  return out;
+}
+// Układ wierszy w pasie. Projekt z rowHint (ustawionym przeciągnięciem) idzie do swojego wiersza albo najbliższego wolnego niżej;
+// reszta wypełnia od góry. Puste wiersze są ściągane, więc rowHint działa jak „kolejność”, a nie sztywny numer.
+let lastDropped = null;   // ostatnio upuszczony klocek wygrywa swój wiersz
+function stack(items) {
+  const hinted = items.filter(p => Number.isInteger(p.rowHint))
+    .sort((a, b) => (b.id === lastDropped) - (a.id === lastDropped) || a.rowHint - b.rowHint || a.start - b.start);
+  const rest = items.filter(p => !Number.isInteger(p.rowHint)).sort((a, b) => a.start - b.start || a.end - b.end);
+  const rows = [], raw = new Map();
+  const fits = (r, p) => !(rows[r] || []).some(q => q.start < p.end && p.start < q.end);
+  const place = (p, from) => { let r = Math.max(0, from); while (!fits(r, p)) r++; (rows[r] ||= []).push(p); raw.set(p.id, r); };
+  hinted.forEach(p => place(p, p.rowHint));
+  rest.forEach(p => place(p, 0));
+  const used = [...new Set(raw.values())].sort((x, y) => x - y);
+  const pos = new Map([...raw].map(([id, r]) => [id, used.indexOf(r)]));
+  return { pos, rows: Math.max(1, used.length) };
+}
+// Przeniesienie klocka do pasa innej osoby = zmiana osoby w oglądanej roli (pusty toPerson = „nieprzypisane”)
+function moveToLane(p, role, fromPerson, toPerson) {
+  const rk = norm(role);
+  if (!rk || norm(fromPerson) === norm(toPerson)) return false;
+  const rest = p.assignments.filter(a => !(norm(a.role) === rk && norm(a.person) === norm(fromPerson) && fromPerson));
+  if (toPerson && !rest.some(a => norm(a.role) === rk && norm(a.person) === norm(toPerson))) rest.push({ group: roleGroup(role), role, person: toPerson });
+  p.assignments = rest;
+  return true;
+}
+
+// 4. SERIALIZACJA I BAZA
+const curTab = () => AppState.tabs.find(t => t.id === AppState.activeTab) || AppState.tabs[0];
+const syncTab = () => { const t = curTab(); if (t) t.projects = AppState.projects; };
+
+function serProject(p) {
+  return {
+    id: p.id, title: p.title, status: p.status, rag: p.rag, notes: p.notes,
+    editors: [...(p.editors || [])],
+    rowHint: Number.isInteger(p.rowHint) ? p.rowHint : null,
+    ...Object.fromEntries(META_KEYS.map(k => [k, p[k]])),
+    assignments: p.assignments.map(a => ({ ...a })),
+    milestones: p.milestones.map(m => ({ name: m.name, date: toLocalISO(m.date), done: m.done, doneAt: toLocalISO(m.doneAt) })),
+    method: p.method, mf: { ...p.mf },
+    startedAt: toLocalISO(p.startedAt), doneAt: toLocalISO(p.doneAt),
+    history: p.history.map(h => ({ ...h })),
+    start: toLocalISO(p.start),
+    end: toLocalISO(p.end),
+    baselineStart: toLocalISO(p.baselineStart),
+    baselineEnd: toLocalISO(p.baselineEnd)
+  };
+}
+function serialize() {
+  syncTab();
+  return {
+    horizonMonths: AppState.horizonMonths,
+    wipLimit: AppState.wipLimit,
+    activeTab: AppState.activeTab,
+    tabs: AppState.tabs.map(t => ({ id: t.id, title: t.title, projects: t.projects.map(serProject) }))
+  };
+}
+
+function normProject(p) {
+  const status = ['ongoing', 'done'].includes(p.status) ? p.status : 'planned';
+  const start = fromLocalISO(p.start), end = fromLocalISO(p.end);
+  const ongoing = status !== 'planned';
+  const mf = (p.mf && typeof p.mf === 'object') ? { ...p.mf } : {};
+  if (p.sprint && !mf.sprint) mf.sprint = p.sprint;
+  if (p.dod && !mf.dod) mf.dod = p.dod;
+  return {
+    id: p.id || AppState.generateId(),
+    title: p.title || 'Bez tytułu',
+    ...Object.fromEntries(META_KEYS.map(k => [k, p[k] || ''])),
+    rag: RAG_VALUES.includes(p.rag) ? p.rag : '',
+    notes: p.notes || '',
+    editors: parseEmails(p.editors),
+    rowHint: Number.isInteger(p.rowHint) ? p.rowHint : null,
+    status,
+    assignments: Array.isArray(p.assignments) ? p.assignments.map(normAssign).filter(Boolean) : migrate(p),
+    milestones: (Array.isArray(p.milestones) ? p.milestones : []).map(m => ({ name: cleanName(m && m.name) || 'Kamień milowy', date: fromLocalISO(m && m.date), done: !!(m && m.done), doneAt: fromLocalISO(m && m.doneAt) })).filter(m => m.date).sort((a, b) => a.date - b.date),
+    method: METHODS[p.method] ? p.method : ((mf.sprint || mf.dod) ? 'scrum' : 'klasyczna'),
+    mf,
+    startedAt: fromLocalISO(p.startedAt),
+    doneAt: status === 'done' ? (fromLocalISO(p.doneAt) || (end ? addDays(end, -1) : null)) : null,
+    history: Array.isArray(p.history) ? p.history.filter(h => h && h.date && h.status) : [],
+    start, end,
+    baselineStart: ongoing ? (fromLocalISO(p.baselineStart) || (start ? new Date(start) : null)) : null,
+    baselineEnd: ongoing ? (fromLocalISO(p.baselineEnd) || (end ? new Date(end) : null)) : null
+  };
+}
+const hasPlan = d => d && (Array.isArray(d.tabs) || Array.isArray(d.projects));
+
+function applyData(data) {
+  if (data && Number.isFinite(data.horizonMonths)) AppState.horizonMonths = data.horizonMonths;
+  if (data && Number.isFinite(data.wipLimit)) AppState.wipLimit = data.wipLimit;
+  const rawTabs = data && Array.isArray(data.tabs) && data.tabs.length
+    ? data.tabs
+    : [{ title: 'Portfolio', projects: data && Array.isArray(data.projects) ? data.projects : [] }];
+  AppState.tabs = rawTabs.map(t => ({
+    id: t.id || AppState.generateId(),
+    title: cleanName(t.title) || 'Bez nazwy',
+    projects: (Array.isArray(t.projects) ? t.projects : []).map(normProject)
+  }));
+  AppState.activeTab = AppState.tabs.some(t => t.id === (data && data.activeTab)) ? data.activeTab : AppState.tabs[0].id;
+  AppState.projects = curTab().projects;
+  f('czasZakres').value = String(AppState.horizonMonths);
+  f('limitWip').value = String(AppState.wipLimit);
+}
+
+const statusEl = f('statusZapisu');
+const GAS = (typeof google !== 'undefined' && google.script && google.script.run) ? google.script.run : null;
+let loaded = false, saveTimer = null, sheetOk = !!GAS, conflict = false;
+const hhmm = () => { const t = new Date(); return `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`; };
+
+function saveLocal() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize())); return true; }
+  catch (err) { console.error(err); return false; }
+}
+// ZAPIS DO ARKUSZA
+// 1) Kolejka: kolejny zapis wychodzi dopiero po odpowiedzi na poprzedni (z aktualną wersją) — inaczej Apps Script
+//    (1–3 s na zapis) dostawał drugi zapis ze starą wersją i odrzucał go jako „konflikt”, a planer przestawał zapisywać.
+// 2) Prawdziwy konflikt (ktoś inny / inna karta zapisała w międzyczasie): scalamy sami, projekt po projekcie (mergePlans).
+let saveInFlight = false, savePending = false, serverBase = null, conflictRetries = 0;
+function save() {
+  if (!loaded || !canEditAny() || conflict || Preview.as) return;
+  saveLocal();
+  if (!GAS) { statusEl.textContent = `Zapisano lokalnie ${hhmm()}`; return; }
+  if (!sheetOk) { statusEl.textContent = 'Arkusz niedostępny – zapis tylko lokalny'; return; }
+  statusEl.textContent = 'Zapisywanie…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 800);
+}
+function flushSave() {
+  if (saveInFlight) { savePending = true; return; }   // poczekaj na odpowiedź poprzedniego zapisu
+  saveInFlight = true; savePending = false;
+  const payload = serialize();
+  GAS.withSuccessHandler(res => {
+        saveInFlight = false;
+        if (res && res.conflict) return resolveConflict();
+        if (res && res.version != null) AppState.version = res.version;
+        serverBase = normSer(payload);
+        conflictRetries = 0;
+        if (savePending) return flushSave();             // w międzyczasie były kolejne zmiany — wyślij je teraz
+        statusEl.textContent = res && res.ignored ? `Zapisano ${hhmm()} – zmiany poza Twoimi kartami pominięte` : `Zapisano w Arkuszu ${hhmm()}`;
+        if (res && res.ignored) refreshFromSheet();       // pokaż prawdziwy stan (tylko gdy nic nie czeka na zapis)
+      })
+     .withFailureHandler(err => {
+        saveInFlight = false;
+        console.error(err);
+        conflict = true;   // blokujemy kolejne zapisy, żeby nic nie szło „w próżnię”
+        statusEl.textContent = 'ZAPIS NIEUDANY';
+        alarm(`Ostatnia zmiana NIE zapisała się w Arkuszu (${err && err.message || err}). Twoje zmiany są w kopii w tej przeglądarce — nie zamykaj karty, przyślij ten komunikat.`);
+      })
+     .savePlan(payload, AppState.version);
+}
+// Ktoś zapisał w międzyczasie: pobieramy stan z Arkusza, scalamy z naszym i zapisujemy wynik
+function resolveConflict() {
+  if (++conflictRetries > 3) {
+    conflict = true;
+    statusEl.textContent = 'ZAPIS WSTRZYMANY';
+    alarm('Nie udało się pogodzić Twoich zmian ze zmianami w Arkuszu (3 próby). Nie zamykaj karty — zrób Eksport i przyślij komunikat.');
+    return;
+  }
+  statusEl.textContent = 'Scalam ze zmianami z Arkusza…';
+  saveInFlight = true;
+  GAS.withSuccessHandler(res => {
+        saveInFlight = false;
+        const theirs = normSer(res && res.data);
+        const { plan, clashes } = mergePlans(serverBase || theirs, normSer(serialize()), theirs);
+        const tab = AppState.activeTab;
+        quiet(() => applyData({ ...plan, activeTab: tab }));
+        AppState.version = res.version ?? null;
+        serverBase = theirs;
+        if (clashes.length) alarm(`Projekt ${clashes.map(t => `„${t}”`).join(', ')} zmienił też ktoś inny w tym samym czasie. Zostawiłem Twoją wersję; poprzednia jest w Historii zmian.`);
+        flushSave();
+      })
+     .withFailureHandler(err => { saveInFlight = false; conflict = true; alarm(`Nie mogę pobrać planu do scalenia (${err && err.message || err}). Nie zamykaj karty, przyślij komunikat.`); })
+     .loadPlan();
+}
+// Odśwież z Arkusza tylko wtedy, gdy nic lokalnego nie czeka na zapis
+function refreshFromSheet() {
+  if (saveInFlight || savePending) return;
+  GAS.withSuccessHandler(res => {
+        if (saveInFlight || savePending) return;
+        const tab = AppState.activeTab;
+        quiet(() => applyData({ ...(res.data || {}), activeTab: tab }));
+        AppState.version = res.version ?? null;
+        serverBase = normSer(res.data);
+      }).loadPlan();
+}
+// Render bez wyzwalania zapisu
+function quiet(fn) { const was = loaded; loaded = false; try { fn(); renderAll(); } finally { loaded = was; } }
+
+// Postać porównywalna: plan znormalizowany tak samo, jak robi to planer
+function normSer(d) {
+  if (!d) return { wipLimit: 2, horizonMonths: 20, tabs: [] };
+  const tabs = Array.isArray(d.tabs) && d.tabs.length ? d.tabs : [{ id: 'portfolio', title: 'Portfolio', projects: d.projects || [] }];
+  return { wipLimit: d.wipLimit, horizonMonths: d.horizonMonths,
+    tabs: tabs.map(t => ({ id: t.id, title: cleanName(t.title) || 'Bez nazwy', projects: (t.projects || []).map(p => serProject(normProject(p))) })) };
+}
+// Scalanie trójstronne (base = to, co Arkusz miał przy naszym ostatnim zapisie; mine = nasz stan; theirs = Arkusz teraz).
+// Projekt po projekcie: zmienił tylko jeden — bierzemy jego wersję; zmienili oboje — nasza wersja + zgłoszenie (clashes).
+// Usunięcie przegrywa ze zmianą (nie kasujemy cudzej pracy). Ustawienia (WIP, horyzont, nazwy zakładek): nasze, jeśli je zmieniliśmy.
+function mergePlans(base, mine, theirs) {
+  const J = JSON.stringify, chg = (a, b) => J(a) !== J(b);
+  const idx = pl => { const m = new Map(); pl.tabs.forEach(t => t.projects.forEach((p, i) => m.set(p.id, { p, tab: t.id, i }))); return m; };
+  const B = idx(base), M = idx(mine), T = idx(theirs);
+  const tB = new Map(base.tabs.map(t => [t.id, t])), tM = new Map(mine.tabs.map(t => [t.id, t])), tT = new Map(theirs.tabs.map(t => [t.id, t]));
+  const clashes = [], chosen = [];
+  new Set([...T.keys(), ...M.keys(), ...B.keys()]).forEach(id => {
+    const b = B.get(id), m = M.get(id), t = T.get(id);
+    let pick = null;
+    if (!b) pick = m || t;                                   // nowy projekt (u nas albo u nich)
+    else if (!m && !t) pick = null;                          // usunięty przez oboje
+    else if (!m) pick = (chg(t.p, b.p) || t.tab !== b.tab) ? t : null;   // my usunęliśmy — zostaje, jeśli oni go zmienili
+    else if (!t) pick = (chg(m.p, b.p) || m.tab !== b.tab) ? m : null;   // oni usunęli — zostaje, jeśli my go zmieniliśmy
+    else {
+      const mc = chg(m.p, b.p) || m.tab !== b.tab, tc = chg(t.p, b.p) || t.tab !== b.tab;
+      pick = mc ? m : t;
+      if (mc && tc && (chg(m.p, t.p) || m.tab !== t.tab)) clashes.push(m.p.title);
+    }
+    if (pick) chosen.push({ ...pick, order: T.has(id) ? T.get(id).i : 1e6 + (M.has(id) ? M.get(id).i : 0) });
+  });
+  const ids = [...theirs.tabs.map(t => t.id), ...mine.tabs.map(t => t.id)].filter((id, i, a) => a.indexOf(id) === i);
+  const used = new Set(chosen.map(c => c.tab));
+  const keep = ids.filter(id => {
+    const gone = (tB.has(id) && !tM.has(id)) || (tB.has(id) && !tT.has(id));   // ktoś usunął zakładkę
+    return !gone || used.has(id);
+  });
+  if (!keep.length) keep.push(ids[0] || 'portfolio');
+  const titleOf = id => { const b = tB.get(id), m = tM.get(id), t = tT.get(id); return (m && (!b || m.title !== b.title)) ? m.title : (t || m || b || { title: 'Portfolio' }).title; };
+  const tabs = keep.map(id => ({ id, title: titleOf(id), projects: chosen.filter(c => (keep.includes(c.tab) ? c.tab : keep[0]) === id).sort((x, y) => x.order - y.order).map(c => c.p) }));
+  const pick = k => (mine[k] !== base[k] ? mine[k] : theirs[k]);
+  return { plan: { wipLimit: pick('wipLimit'), horizonMonths: pick('horizonMonths'), tabs }, clashes };
+}
+// Czerwony pasek na górze: coś jest nie tak i użytkownik MUSI to zobaczyć (brak Arkusza, nieudany zapis, zła wersja plików)
+function alarm(msg) {
+  let el = document.getElementById('alarmPasek');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'alarmPasek';
+    el.style.cssText = 'position:sticky;top:0;z-index:2000;background:var(--blad);color:#fff;padding:10px 16px;font-weight:600;font-size:14px;display:flex;gap:12px;align-items:center;justify-content:space-between';
+    document.body.prepend(el);
+  }
+  el.innerHTML = `<span>${esc(msg)}</span><button class="btn btn-secondary btn-maly" onclick="location.reload()">Odśwież</button>`;
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { applyData(JSON.parse(raw)); return true; }
+  } catch (err) { console.error(err); }
+  return false;
+}
+function setReadOnly(ro) {
+  Perm.isOwner = !ro;
+  document.body.classList.toggle('tylko-odczyt', ro);
+  if (ro) statusEl.textContent = canEditAny() ? 'Edytujesz tylko swoje karty' : 'Podgląd (tylko odczyt)';
+}
+function showWho() {
+  const el = f('kimJestem');
+  el.hidden = !GAS || !Perm.user;
+  el.textContent = `${Perm.user}${Perm.isOwner ? ' · właściciel' : ''}`;
+}
+function load(done) {
+  if (!GAS) {
+    const had = loadLocal();
+    if (!had) applyData({ projects: [] });
+    loaded = true; done();
+    statusEl.textContent = 'Plik lokalny – dane tylko w tej przeglądarce';
+    return;
+  }
+  statusEl.textContent = 'Wczytywanie z Arkusza…';
+  GAS.withSuccessHandler(res => {
+        res = res || {};
+        Perm.user = Perm.realUser = String(res.user || '').toLowerCase();
+        Perm.realOwner = !!res.isOwner;
+        AppState.serverParts = res.parts || {};
+        sheetOk = true;
+        AppState.version = res.version ?? null;
+        serverBase = normSer(res.data);
+        // Arkusz rządzi: pusty Arkusz = pusty plan (bez dociągania localStorage)
+        applyData(hasPlan(res.data) ? res.data : { projects: [] });
+        setReadOnly(!res.isOwner);
+        showWho();
+        loaded = true;
+        if (res.isOwner) statusEl.textContent = `Wczytano ${hhmm()}`;
+        done();
+      })
+     .withFailureHandler(err => {
+        // Bez Arkusza nie pokazujemy kopii z przeglądarki i blokujemy edycję — inaczej zmiany przepadają po cichu
+        console.error(err);
+        sheetOk = false;
+        Perm.realOwner = false;
+        applyData({ projects: [] });
+        setReadOnly(true);
+        statusEl.textContent = 'Brak połączenia z Arkuszem';
+        alarm(`Nie mogę wczytać planu z Arkusza (${err && err.message || err}). Edycja jest zablokowana, nic się nie zapisze. Odśwież stronę; jeśli to się powtarza, przyślij ten komunikat.`);
+        done();
+      })
+     .loadPlan();
+}
+
+// ===== KONIEC js-model (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06');

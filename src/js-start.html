@@ -1,0 +1,23 @@
+// js-start — Start aplikacji — musi być dołączony jako ostatni
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// START — wczytanie planu z Arkusza i pierwszy render
+// Kontrola wklejenia: każdy plik zgłasza się na końcu swoją wersją. Brak/inna wersja = plik do ponownego wklejenia.
+const PLANER_VERSION = '2026-11-06';   // wersja serwera (Code, PlanLib)
+const PLANER_FILES = { 'js-model': '2026-11-06', 'js-os': '2026-11-06', 'js-karta': '2026-11-06', 'js-portfel': '2026-11-06', 'js-historia': '2026-11-06', 'js-miary': '2026-11-06', 'js-testy': '2026-11-06' };
+function checkParts() {
+  const got = new Set(window.__planerParts);
+  const bad = Object.entries(PLANER_FILES).filter(([n, v]) => !got.has(`${n}@${v}`)).map(([n]) => n);
+  const sp = AppState.serverParts || {};
+  if (GAS && sheetOk && sp.code !== PLANER_VERSION) bad.push('Code');      // bez Arkusza serwer nie odpowiedział — tego nie oceniamy
+  if (GAS && sheetOk && sp.planLib !== PLANER_VERSION) bad.push('PlanLib');
+  if (bad.length) alarm(`Pliki w innej wersji albo wklejone nie do końca: ${bad.join(', ')}. Wklej je ponownie z najnowszej paczki i zrób Nowa wersja.`);
+}
+load(() => {
+  checkParts();
+  renderAll();
+  // Testy przy każdym otwarciu, w tle (po narysowaniu planu, więc nie spowalniają startu).
+  // Pasek: zawsze przy ?test; bez niego tylko przy błędzie i tylko dla właściciela.
+  const full = window.PLANER_TEST || /[?&]test\b/.test(location.search);
+  setTimeout(() => { if (full || Perm.realOwner) runTests(); }, 1500);   // okno tylko przy NOK
+});

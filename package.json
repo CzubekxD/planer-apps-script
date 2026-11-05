@@ -1,0 +1,15 @@
+{
+  "name": "planer-apps-script",
+  "private": true,
+  "description": "Planer — oś czasu portfela projektów jako web app Google Apps Script",
+  "scripts": {
+    "test": "npm run test:server && npm run test:e2e",
+    "test:server": "node --test tests/server.test.js",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e.test.js",
+    "paczka": "node scripts/paczka.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,261 @@
+// js-portfel — Portfel i analityka (KPI, heatmapa WIP), Obeya A3, przełączniki widoku, eksport/import
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 8. PORTFEL I ANALITYKA
+const MONTH_NAMES = ["Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru"];
+const startOfToday = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const isActiveInRange = (p, from, to) => hasDates(p) && p.start < to && effEnd(p) > from;
+
+function teamPeople(p) {
+  const seen = new Map();
+  teamOf(p).forEach(a => { const k = norm(a.person); if (!seen.has(k) && !isNA(a.person)) seen.set(k, a.person); });
+  return seen;
+}
+
+function heatMonths(count) {
+  const res = [];
+  const base = AppState.globalStartDate;
+  for (let i = 0; i < count; i++) {
+    const from = new Date(base.getFullYear(), base.getMonth() + i, 1);
+    const to = new Date(base.getFullYear(), base.getMonth() + i + 1, 1);
+    res.push({ from, to, label: `${MONTH_NAMES[from.getMonth()]} '${String(from.getFullYear()).slice(-2)}` });
+  }
+  return res;
+}
+
+function computeLoad(months) {
+  const people = new Map();
+  AppState.projects.forEach(p => {
+    teamPeople(p).forEach((name, key) => {
+      if (!people.has(key)) people.set(key, { name, counts: months.map(() => 0), projects: months.map(() => []) });
+      const rec = people.get(key);
+      months.forEach((m, i) => {
+        if (isActiveInRange(p, m.from, m.to)) { rec.counts[i]++; rec.projects[i].push(p.title); }
+      });
+    });
+  });
+  return [...people.values()]
+    .filter(r => r.counts.some(c => c > 0))
+    .sort((a, b) => Math.max(...b.counts) - Math.max(...a.counts) || a.name.localeCompare(b.name, 'pl'));
+}
+
+function computeDecisions() {
+  const today = startOfToday();
+  const in30 = addDays(today, 30);
+  const out = [];
+  const add = (prio, typ, p, text) => out.push({ prio, typ, project: p, title: p ? p.title : null, text });
+
+  AppState.projects.filter(p => hasDates(p) && p.status !== 'done' && p.end > today).forEach(p => {
+    const active = p.start <= today;
+    const startsSoon = p.start > today && p.start <= in30;
+    const d = delayDays(p);
+    if (d > 0) add(d > 14 ? 1 : 2, 'Opóźnienie', p, `Koniec przesunięty o ${d} dni wobec planu (${formatDate(addDays(p.baselineEnd, -1))} → ${formatDate(addDays(p.end, -1))}).`);
+    if (p.rag === 'red') add(1, 'Eskalacja', p, `Status czerwony${p.impediments ? ` — bloker: ${p.impediments}` : ''}.`);
+    if (p.rag === 'amber') add(2, 'Ryzyko', p, `Status żółty${p.impediments ? ` — ${p.impediments}` : ''}.`);
+    if (!p.goal || !p.kpi || !p.baseline) {
+      const brak = [!p.goal && 'celu', !p.kpi && 'KPI', !p.baseline && 'baseline/target'].filter(Boolean).join(', ');
+      add(active || startsSoon ? 2 : 3, 'Metryczka', p, `Brak ${brak}.`);
+    }
+    if (['scrum', 'hybryda'].includes(methodOf(p)) && !p.mf.dod && (active || startsSoon)) add(3, 'DoD', p, 'Brak Definition of Done.');
+    p.milestones.filter(m => !m.done && m.date < today).forEach(m => add(diffDays(m.date, today) > 14 ? 1 : 2, 'Kamień milowy', p, `„${m.name}” po terminie o ${diffDays(m.date, today)} dni (${formatDate(m.date)}).`));
+  });
+
+  const months = heatMonths(2);
+  computeLoad(months).forEach(r => {
+    r.counts.forEach((c, i) => {
+      if (c > AppState.wipLimit) add(1, 'Przeciążenie', null, `${r.name}: ${c} równoległych projektów w ${months[i].label} (limit ${AppState.wipLimit}) — ${r.projects[i].join(', ')}.`);
+    });
+  });
+
+  return out.sort((a, b) => a.prio - b.prio);
+}
+
+function computeKpi(decisions) {
+  const today = startOfToday();
+  const valid = AppState.projects.filter(hasDates);
+  const active = valid.filter(p => p.status !== 'done' && p.start <= today && p.end > today);
+  const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
+  const load = computeLoad(heatMonths(1));
+  return {
+    active: active.length,
+    next90: next90.length,
+    red: active.filter(p => p.rag === 'red').length,
+    amber: active.filter(p => p.rag === 'amber').length,
+    delayed: valid.filter(p => p.status !== 'done' && p.end > today && delayDays(p) > 0).length,
+    overloaded: load.filter(r => r.counts[0] > AppState.wipLimit).length,
+    critical: decisions.filter(d => d.prio === 1).length
+  };
+}
+
+function renderPortfolio() {
+  const decisions = computeDecisions();
+  const k = computeKpi(decisions);
+
+  f('portfelKpi').innerHTML = [
+    ['Aktywne na osi', k.active, false],
+    ['Start w 90 dni', k.next90, false],
+    ['Opóźnione', k.delayed, k.delayed > 0],
+    ['Czerwone / żółte', `${k.red} / ${k.amber}`, k.red > 0],
+    ['Przeciążone osoby', k.overloaded, k.overloaded > 0],
+    ['Decyzje pilne', k.critical, k.critical > 0]
+  ].map(([l, v, alarm]) => `<div class="kpi-tile ${alarm ? 'alarm' : ''}"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
+
+  const lista = f('decyzjeLista');
+  lista.innerHTML = decisions.length ? '' : '<div class="pusto">Brak otwartych decyzji. Portfel jest kompletny.</div>';
+  decisions.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'decyzja';
+    el.innerHTML = `<div class="pas p${d.prio}"></div><div><div class="t">${esc(d.title || 'Portfel')}</div><div class="d">${esc(d.text)}</div></div><div class="typ">${esc(d.typ)}</div>`;
+    if (d.project) el.addEventListener('click', () => openModal(d.project));
+    lista.appendChild(el);
+  });
+
+  const months = heatMonths(Math.min(12, AppState.horizonMonths));
+  const load = computeLoad(months);
+  const wrap = f('heatWrap');
+  if (!load.length) {
+    wrap.innerHTML = '<div class="pusto">Dodaj osoby w sekcji Zespół w kartach projektów, aby zobaczyć obciążenie.</div>';
+    return;
+  }
+  const cls = c => c === 0 ? '' : c < AppState.wipLimit ? 'c1' : c === AppState.wipLimit ? 'c2' : 'c3';
+  wrap.innerHTML = `<table class="heat"><thead><tr><th class="osoba">Osoba</th>${months.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr></thead><tbody>${
+    load.map(r => `<tr><td class="osoba">${esc(r.name)}</td>${r.counts.map((c, i) =>
+      `<td class="${cls(c)}" title="${esc(r.projects[i].join('\n'))}">${c || ''}</td>`).join('')}</tr>`).join('')
+  }</tbody></table>`;
+}
+
+// 9. OBEYA REVIEW A3
+function openObeyaReview() {
+  const decisions = computeDecisions();
+  const k = computeKpi(decisions);
+  const today = startOfToday();
+  const top = decisions.slice(0, 3);
+  const rank = { red: 0, amber: 1, green: 2, '': 3 };
+  const active = AppState.projects
+    .filter(p => hasDates(p) && p.status !== 'done' && p.end > today && p.start <= addDays(today, 90))
+    .sort((a, b) => (rank[a.rag] - rank[b.rag]) || a.start - b.start);
+  const months = heatMonths(6);
+  const load = computeLoad(months).filter(r => r.counts.some(c => c >= AppState.wipLimit));
+  const ragLbl = { red: 'Czerwony', amber: 'Żółty', green: 'Zielony', '': '—' };
+  const cls = c => c === 0 ? '' : c < AppState.wipLimit ? 'c1' : c === AppState.wipLimit ? 'c2' : 'c3';
+  const ludzie = list => list.map(a => `${esc(a.role)}: ${esc(a.person)}`).join('<br>');
+
+  const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>Obeya review ${formatDate(today)}</title>
+<style>
+@page { size: A3 landscape; margin: 12mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Host Grotesk', system-ui, sans-serif; color: #1C2320; background: #fff; font-size: 11pt; line-height: 1.35; padding: 8mm; }
+h1 { font-size: 22pt; } h2 { font-size: 13pt; text-transform: uppercase; letter-spacing: .06em; color: #2F5591; margin: 0 0 6pt; border-bottom: 2px solid #2F5591; padding-bottom: 3pt; }
+.top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10pt; }
+.sub { color: #57625D; font-size: 9.5pt; }
+.grid { display: grid; grid-template-columns: 1fr 1.6fr; gap: 14pt; }
+.kpi { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8pt; margin-bottom: 12pt; }
+.kpi div { border: 1px solid #C2CBC6; border-radius: 6pt; padding: 6pt 8pt; } .kpi b { font-size: 20pt; display: block; } .kpi .al b { color: #AE3F37; }
+.dec { border: 1px solid #C2CBC6; border-left: 6pt solid #86928C; border-radius: 6pt; padding: 7pt 9pt; margin-bottom: 7pt; page-break-inside: avoid; }
+.dec.p1 { border-left-color: #AE3F37; } .dec.p2 { border-left-color: #8F5E10; }
+.dec .n { font-weight: 700; } .dec .typ { float: right; font-size: 9pt; font-weight: 700; color: #57625D; text-transform: uppercase; }
+.dec .ruling { margin-top: 6pt; border-top: 1px dashed #C2CBC6; padding-top: 4pt; color: #57625D; font-size: 9.5pt; }
+table { width: 100%; border-collapse: collapse; font-size: 9.5pt; } th, td { border: 1px solid #C2CBC6; padding: 4pt 5pt; text-align: left; vertical-align: top; }
+th { background: #E7EBE9; } .rag { display: inline-block; width: 9pt; height: 9pt; border-radius: 50%; vertical-align: -1pt; margin-right: 4pt; background: #C2CBC6; }
+.rag.red { background: #AE3F37; } .rag.amber { background: #C98A1E; } .rag.green { background: #2B7552; }
+.heat td, .heat th { text-align: center; } .heat td:first-child, .heat th:first-child { text-align: left; }
+.c1 { background: #DDEFE5; } .c2 { background: #F6EAD3; } .c3 { background: #F7E1DE; color: #AE3F37; font-weight: 700; }
+@media screen { .print-btn { position: fixed; top: 10px; right: 10px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; } }
+@media print { .print-btn { display: none; } }
+</style></head><body>
+<button class="print-btn" onclick="window.print()">Drukuj / PDF</button>
+<div class="top"><h1>Obeya — przegląd portfela projektów</h1><div class="sub">Stan na ${formatDate(today)} · limit WIP: ${AppState.wipLimit} proj./osobę</div></div>
+<div class="kpi">
+  <div><b>${k.active}</b>aktywne na osi</div>
+  <div><b>${k.next90}</b>start w 90 dni</div>
+  <div class="${k.red ? 'al' : ''}"><b>${k.red} / ${k.amber}</b>czerwone / żółte</div>
+  <div class="${k.overloaded ? 'al' : ''}"><b>${k.overloaded}</b>osoby ponad limit</div>
+  <div class="${k.critical ? 'al' : ''}"><b>${k.critical}</b>decyzje pilne</div>
+</div>
+<div class="grid">
+  <div>
+    <h2>Top 3 decyzje na dziś</h2>
+    ${top.length ? top.map((d, i) => `<div class="dec p${d.prio}"><span class="typ">${esc(d.typ)}</span><div class="n">${i + 1}. ${esc(d.title || 'Portfel')}</div><div>${esc(d.text)}</div><div class="ruling">Decyzja: ______________________ · Kto: __________ · Do kiedy: ________</div></div>`).join('') : '<p>Brak otwartych decyzji.</p>'}
+    <h2 style="margin-top:12pt;">Obciążenie zespołu</h2>
+    ${load.length ? `<table class="heat"><tr><th>Osoba</th>${months.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr>${load.map(r => `<tr><td>${esc(r.name)}</td>${r.counts.map(c => `<td class="${cls(c)}">${c || ''}</td>`).join('')}</tr>`).join('')}</table>` : '<p>Nikt nie osiąga limitu WIP w najbliższych 6 miesiącach.</p>'}
+  </div>
+  <div>
+    <h2>Portfel: aktywne i startujące w 90 dni</h2>
+    <table><tr><th>Projekt</th><th>Status</th><th>Cel</th><th>KPI (baseline → target)</th><th>Zespół / interesariusze</th><th>Termin</th><th>Vs plan</th><th>Blokery</th></tr>
+    ${active.map(p => `<tr><td><b>${esc(p.title)}</b></td><td><span class="rag ${esc(p.rag)}"></span>${ragLbl[p.rag || '']}</td><td>${esc(p.goal) || '<i>brak</i>'}</td><td>${esc([p.kpi, p.baseline].filter(Boolean).join(': ')) || '<i>brak</i>'}</td><td>${ludzie(teamOf(p)) || '—'}${stakeOf(p).length ? `<br><span class="sub">${ludzie(stakeOf(p))}</span>` : ''}</td><td>${formatDate(p.start)}<br>${formatDate(addDays(p.end, -1))}</td><td>${delayDays(p) > 0 ? `<b style="color:#AE3F37">+${delayDays(p)} dni</b>` : '—'}</td><td>${esc(p.impediments) || '—'}</td></tr>`).join('') || '<tr><td colspan="8">Brak projektów w tym oknie.</td></tr>'}
+    </table>
+  </div>
+</div>
+</body></html>`;
+
+  f('a3Frame').srcdoc = html;
+  f('a3Overlay').classList.add('active');
+}
+f('a3Zamknij').addEventListener('click', () => f('a3Overlay').classList.remove('active'));
+f('a3Drukuj').addEventListener('click', () => { const w = f('a3Frame').contentWindow; w.focus(); w.print(); });
+
+// 10. WIDOK, HORYZONT, EKSPORT, IMPORT
+function setViewRole(v) {
+  AppState.viewRole = v;
+  try { localStorage.setItem(VIEW_KEY, v); } catch (err) {}
+  f('widokRola').value = v;
+  renderScale();
+  renderLanes();
+}
+f('widokRola').addEventListener('change', e => setViewRole(e.target.value));
+f('naInfo').addEventListener('click', () => setViewRole(ALL_VIEW));
+f('pokazZakonczone').addEventListener('change', e => {
+  AppState.showDone = e.target.checked;
+  try { localStorage.setItem('planer.zakonczone', AppState.showDone ? '1' : '0'); } catch (err) {}
+  renderLanes();
+});
+// Oś od wybranego dnia (pole „Od”); przewijanie wraca na początek osi
+function setViewStart(d) {
+  AppState.globalStartDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const v = toLocalISO(AppState.globalStartDate);
+  f('osStart').value = v;
+  try { localStorage.setItem('planer.od', v); } catch (e) {}
+}
+setViewStart(AppState.globalStartDate);
+f('osStart').addEventListener('change', e => {
+  const d = fromLocalISO(e.target.value);
+  if (!d) return;
+  setViewStart(d);
+  renderAll();
+  f('scroll-wrapper').scrollLeft = 0;
+});
+f('osDzis').addEventListener('click', () => { setViewStart(startOfToday()); renderAll(); f('scroll-wrapper').scrollLeft = 0; });
+f('czasZakres').addEventListener('change', (e) => {
+  AppState.horizonMonths = parseInt(e.target.value);
+  renderAll();
+});
+f('limitWip').addEventListener('change', (e) => {
+  AppState.wipLimit = Math.max(1, Math.min(9, parseInt(e.target.value) || 2));
+  e.target.value = AppState.wipLimit;
+  renderAll();
+});
+f('obeyaBtn').addEventListener('click', openObeyaReview);
+f('eksportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(serialize(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `planer-${toLocalISO(new Date())}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+f('importBtn').addEventListener('click', () => f('importPlik').click());
+f('importPlik').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!hasPlan(data)) throw new Error('Brak listy projektów w pliku.');
+    if (!confirm('Zastąpić obecny plan danymi z pliku?')) return;
+    applyData(data);
+    renderAll();
+  } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
+});
+
+// ===== KONIEC js-portfel (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06');

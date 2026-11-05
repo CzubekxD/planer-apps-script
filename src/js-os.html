@@ -1,0 +1,635 @@
+// js-os — Oś czasu: skala dni/tygodnie/miesiące, pasy osób, klocki, rysowanie i przeciąganie
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 5. RENDER
+const DOM = {
+  monthsContainer: f('months-container'),
+  quartersContainer: f('quarters-container'),
+  timelineBody: f('timeline-body'),
+  legendList: f('lista-legendy'),
+  tooltip: f('date-tooltip'),
+  drawGhost: f('draw-ghost')
+};
+
+try { AppState.viewRole = localStorage.getItem(VIEW_KEY) || ''; AppState.showDone = localStorage.getItem('planer.zakonczone') === '1'; } catch (e) {}
+
+function renderRoleSelect() {
+  const sel = f('widokRola');
+  const roles = allRoles();
+  if (!roles.length) {
+    sel.innerHTML = '<option value="">— brak ról —</option>';
+    sel.disabled = true;
+    AppState.viewRole = '';
+    return;
+  }
+  sel.disabled = false;
+  const all = `<option value="${ALL_VIEW}">Wszystko — wiersz na projekt (${AppState.projects.filter(hasDates).length})</option>`;
+  sel.innerHTML = roles.map(r => `<option value="${esc(r.name)}">${esc(r.name)} (${r.count})</option>`).join('') + all;
+  if (AppState.viewRole === ALL_VIEW) { sel.value = ALL_VIEW; return; }
+  let cur = roles.find(r => norm(r.name) === norm(AppState.viewRole))
+         || roles.find(r => norm(r.name) === 'kupiec')
+         || roles[0];
+  AppState.viewRole = cur.name;
+  sel.value = cur.name;
+}
+
+function renderScale() {
+  DOM.monthsContainer.innerHTML = '';
+  DOM.quartersContainer.innerHTML = '';
+  f('tlCorner').textContent = AppState.viewRole === ALL_VIEW ? 'Projekt' : (AppState.viewRole || 'Osoba');
+  document.querySelectorAll('#skalaOsi button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.skala === AppState.scale)));
+  applyGrid();
+  if (AppState.scale === 'month') return renderScaleMonths();
+  renderScaleLinear();
+}
+
+function renderScaleMonths() {
+  const monthNames = ["Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru"];
+  const start = AppState.globalStartDate, end = viewEnd();
+  let qEl = null, qKey = '', qW = 0;
+  for (let m = DATE_LIB.monthBase(start); m < end; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+    const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+    const w = dateToPx(next < end ? next : end) - dateToPx(m < start ? start : m);   // pierwszy miesiąc może być niepełny
+    if (w <= 0) continue;
+    const mDiv = document.createElement('div');
+    mDiv.className = 'miesiac';
+    mDiv.style.width = `${w}px`;
+    mDiv.textContent = w >= 60 ? `${monthNames[m.getMonth()]} '${String(m.getFullYear()).slice(-2)}` : (w >= 30 ? monthNames[m.getMonth()] : '');
+    if (w < 60) mDiv.title = `${monthNames[m.getMonth()]} ${m.getFullYear()}`;
+    DOM.monthsContainer.appendChild(mDiv);
+    const key = `Q${Math.floor(m.getMonth() / 3) + 1} ${m.getFullYear()}`;
+    if (key !== qKey) {
+      if (qEl) qEl.style.width = `${qW}px`;
+      qEl = document.createElement('div');
+      qEl.className = 'kwartal przyklejony';
+      qEl.innerHTML = `<span>${key}</span>`;
+      DOM.quartersContainer.appendChild(qEl);
+      qKey = key; qW = 0;
+    }
+    qW += w;
+  }
+  if (qEl) qEl.style.width = `${qW}px`;
+}
+
+// Dni / tygodnie: górny wiersz = miesiące (etykieta przyklejona przy przewijaniu), dolny = dni albo tygodnie ISO
+const MONTH_FULL = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+const DOW_SHORT = ['nd','pn','wt','śr','cz','pt','sb'];
+function renderScaleLinear() {
+  const d = pxPerDay(), start = AppState.globalStartDate, end = viewEnd();
+  const todayISO = toLocalISO(startOfToday());
+  const topFrag = document.createDocumentFragment(), botFrag = document.createDocumentFragment();
+  for (let m = new Date(start); m < end; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+    const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+    const el = document.createElement('div');
+    el.className = 'kwartal przyklejony';
+    el.style.width = `${diffDays(m, next) * d}px`;
+    el.innerHTML = `<span>${MONTH_FULL[m.getMonth()]} ${m.getFullYear()}</span>`;
+    topFrag.appendChild(el);
+  }
+  if (AppState.scale === 'day') {
+    for (let day = new Date(start); day < end; day = addDays(day, 1)) {
+      const el = document.createElement('div');
+      const dow = day.getDay();
+      el.className = 'miesiac dzien' + (dow === 0 || dow === 6 ? ' weekend' : '') + (toLocalISO(day) === todayISO ? ' dzis' : '');
+      el.style.width = `${d}px`;
+      el.innerHTML = `${day.getDate()}<small>${DOW_SHORT[dow]}</small>`;
+      el.title = `${formatDate(day)} · tydz. ${isoWeek(day)}`;
+      botFrag.appendChild(el);
+    }
+  } else {
+    // Kolumny od poniedziałku do poniedziałku; pierwsza i ostatnia mogą być niepełne
+    let a = new Date(start);
+    while (a < end) {
+      const dow = (a.getDay() + 6) % 7;
+      let b = addDays(a, 7 - dow);
+      if (b > end) b = new Date(end);
+      const el = document.createElement('div');
+      const today = startOfToday();
+      el.className = 'miesiac tydzien' + (today >= a && today < b ? ' dzis' : '');
+      const w = diffDays(a, b) * d;
+      el.style.width = `${w}px`;
+      el.innerHTML = w >= 60 ? `T${isoWeek(a)}<small>${String(a.getDate()).padStart(2,'0')}.${String(a.getMonth()+1).padStart(2,'0')}</small>` : (w >= 28 ? `T${isoWeek(a)}` : '');
+      el.title = `Tydzień ${isoWeek(a)}: ${formatDate(a)} – ${formatDate(addDays(b, -1))}`;
+      botFrag.appendChild(el);
+      a = b;
+    }
+  }
+  DOM.quartersContainer.appendChild(topFrag);
+  DOM.monthsContainer.appendChild(botFrag);
+}
+
+// Siatka pasów: miesiące = co kolumnę, tygodnie = linia w każdy poniedziałek, dni = linia co dzień + przyciemnione weekendy
+function applyGrid() {
+  const st = f('timeline').style;
+  const d = pxPerDay();
+  if (!d) {   // miesiące: linia na granicy każdego miesiąca, także gdy oś startuje w środku miesiąca
+    ['--grid-img','--grid-size'].forEach(k => st.removeProperty(k));
+    const first = dateToPx(new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + 1, 1));
+    st.setProperty('--grid-pos', `${first % AppState.monthWidth}px 0`);
+    return;
+  }
+  const dow0 = (AppState.globalStartDate.getDay() + 6) % 7; // pn = 0
+  const mondayPx = ((7 - dow0) % 7) * d;
+  const line = 'linear-gradient(to right, var(--linia) 1px, transparent 1px)';
+  if (AppState.scale === 'week') {
+    st.setProperty('--grid-img', line);
+    st.setProperty('--grid-size', `${7 * d}px 100%`);
+    st.setProperty('--grid-pos', `${mondayPx}px 0`);
+  } else {
+    const weekend = `linear-gradient(to right, transparent ${5 * d}px, color-mix(in srgb, var(--pow-3) 55%, transparent) ${5 * d}px)`;
+    const thin = 'linear-gradient(to right, color-mix(in srgb, var(--linia) 55%, transparent) 1px, transparent 1px)';
+    st.setProperty('--grid-img', `${line}, ${thin}, ${weekend}`);
+    st.setProperty('--grid-size', `${7 * d}px 100%, ${d}px 100%, ${7 * d}px 100%`);
+    st.setProperty('--grid-pos', `${mondayPx}px 0, 0 0, ${mondayPx}px 0`);
+  }
+}
+
+// Przewijanie osi: data w zadanym ułamku widocznej szerokości toru
+function visibleTrackW() { const w = f('scroll-wrapper'); return Math.max(0, w.clientWidth - AppState.labelWidth); }
+function dateAtViewport(frac = 0.5) { return pxToDate(f('scroll-wrapper').scrollLeft + visibleTrackW() * frac); }
+function scrollToDate(date, frac = 0.5) {
+  const w = f('scroll-wrapper');
+  w.scrollLeft = Math.max(0, dateToPx(date) - visibleTrackW() * frac);
+}
+function setScale(scale) {
+  if (!SCALES[scale] || scale === AppState.scale) return;
+  // Zmiana skali trzyma datę z lewej krawędzi widoku (oglądasz „od” tej daty)
+  const left = dateAtViewport(0);
+  AppState.scale = scale;
+  try { localStorage.setItem('planer.skala', scale); } catch (e) {}
+  renderScale();
+  renderLanes();
+  scrollToDate(left, 0);
+}
+document.querySelectorAll('#skalaOsi button').forEach(b => b.addEventListener('click', () => setScale(b.dataset.skala)));
+
+function makeKlocek(p, lane, sub) {
+  const isPlanned = p.status === 'planned';
+  let leftPx = dateToPx(p.start);
+  let widthPx = Math.max(AppState.minBlockWidth, dateToPx(p.end) - leftPx);
+  const uciety = leftPx < 0;
+  if (leftPx < 0) { widthPx = Math.max(AppState.minBlockWidth, widthPx + leftPx); leftPx = 0; }
+
+  const klocek = document.createElement('div');
+  klocek.className = `klocek status-${p.status}` + (canEditCard(p) ? ' edytowalny' : '');
+  paintPerson(klocek, lane.color || '');
+  klocek.dataset.id = p.id;
+  if (uciety) klocek.classList.add('uciety');
+  klocek.style.left = `${leftPx}px`;
+  klocek.style.width = `${widthPx}px`;
+  klocek.style.top = `${sub * AppState.rowHeight + AppState.blockOffsetY}px`;
+
+  const linia = document.createElement('div');
+  linia.className = 'klocek-linia';
+  if (p.rag) {
+    const ragEl = document.createElement('span');
+    ragEl.className = `klocek-rag ${p.rag}`;
+    linia.appendChild(ragEl);
+  }
+  const titleEl = document.createElement('span');
+  titleEl.className = 'klocek-tytul';
+  titleEl.textContent = p.title;
+  if (p.status === 'done') { const ok = document.createElement('span'); ok.className = 'ptaszek'; ok.textContent = '✓'; linia.appendChild(ok); }
+  if (!Perm.isOwner && canEditCard(p)) { const o = document.createElement('span'); o.className = 'klocek-olowek'; o.textContent = '✎'; o.title = 'Możesz edytować tę kartę'; linia.appendChild(o); }
+  linia.appendChild(titleEl);
+
+  const datesEl = document.createElement('div');
+  datesEl.className = 'klocek-daty';
+  datesEl.textContent = `${formatDate(p.start)} - ${formatDate(addDays(p.end, -1))}`;
+
+  const handleLeft = document.createElement('div'); handleLeft.className = 'resize-handle resize-left';
+  const handleRight = document.createElement('div'); handleRight.className = 'resize-handle resize-right';
+
+  const delBtn = document.createElement('div');
+  delBtn.className = 'klocek-delete';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Usuń projekt';
+  delBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!Perm.isOwner) return;
+    if (confirm(`Usunąć projekt "${p.title}"?`)) {
+      AppState.projects = AppState.projects.filter(proj => proj.id !== p.id);
+      renderAll();
+    }
+  });
+
+  klocek.append(handleLeft, linia, datesEl, handleRight, delBtn);
+
+  const opoz = delayDays(p);
+  if (opoz > 0) {
+    klocek.classList.add('opozniony');
+    const badge = document.createElement('span');
+    badge.className = 'klocek-opoz';
+    badge.textContent = `+${opoz} dni`;
+    linia.appendChild(badge);
+  }
+  // podwójne kliknięcie (otwarcie karty) obsługuje pointerdown niżej — tu nie dublujemy
+  klocek.addEventListener('dblclick', (e) => e.stopPropagation());
+  klocek.addEventListener('click', (e) => { if (!canEditCard(p)) { e.stopPropagation(); openModal(p); } });
+
+  klocek.addEventListener('mouseenter', (e) => {
+    if (dragState || drawState.active) return;
+    const parts = [p.title];
+    if (!isPlanned) {
+      parts.push(opoz > 0 ? `Opóźnienie: +${opoz} dni (plan: ${formatDate(addDays(p.baselineEnd, -1))})` : opoz < 0 ? `Przed planem: ${-opoz} dni` : 'Zgodnie z planem');
+    } else parts.push('Projekt planowany');
+    parts.push(`Metoda: ${METHODS[methodOf(p)].label}`);
+    if (p.startedAt) parts.push(`Start faktyczny: ${formatDate(p.startedAt)}`);
+    if (p.status === 'done' && p.doneAt) parts.push(`Zakończony: ${formatDate(p.doneAt)}${p.startedAt ? ` · czas realizacji ${diffDays(p.startedAt, p.doneAt) + 1} dni` : ''}`);
+    if (p.goal) parts.push(`Cel: ${p.goal}`);
+    if (p.kpi || p.baseline) parts.push(`KPI: ${[p.kpi, p.baseline].filter(Boolean).join(' · ')}`);
+    const team = teamOf(p).map(a => `${a.role}: ${a.person}`);
+    const stake = stakeOf(p).map(a => `${a.role}: ${a.person}`);
+    if (team.length) parts.push(`Zespół — ${team.join(' · ')}`);
+    if (stake.length) parts.push(`Interesariusze — ${stake.join(' · ')}`);
+    if (p.impediments) parts.push(`Blokery: ${p.impediments}`);
+    parts.push(p.editors && p.editors.length ? `Edytorzy karty: ${p.editors.join(', ')}` : 'Edytuje tylko właściciel planu');
+    showTooltip(e.clientX, e.clientY, parts.join('\n'));
+  });
+  klocek.addEventListener('mouseleave', () => { if (!dragState && !drawState.active) hideTooltip(); });
+  return klocek;
+}
+
+function renderLanes() {
+  DOM.timelineBody.innerHTML = '';
+  DOM.legendList.innerHTML = '';
+  const isAll = AppState.viewRole === ALL_VIEW;
+  f('legendaTytul').textContent = isAll ? 'Osoby — Kupiec (kolor)' : AppState.viewRole ? `Osoby — ${AppState.viewRole}` : 'Osoby';
+  const trackW = trackWidth();
+  const lanes = buildLanes();
+  const naBtn = f('naInfo');
+  naBtn.hidden = !lanes.na;
+  naBtn.textContent = `+${lanes.na} bez tej roli (N/A)`;
+  f('pokazZakEtykieta').hidden = !isAll;
+  f('pokazZakonczone').checked = !!AppState.showDone;
+  // Legenda w „Wszystko”: osoby w roli koloru z liczbą projektów
+  const legend = isAll ? (() => { const m = new Map(); lanes.filter(l => l.project).forEach(l => { const k = norm(l.color); if (!m.has(k)) m.set(k, { name: l.color, unassigned: !l.color, items: [] }); m.get(k).items.push(l); }); return [...m.values()].sort((a, b) => (a.unassigned - b.unassigned) || a.name.localeCompare(b.name, 'pl')); })() : null;
+
+  lanes.forEach(lane => {
+    const { pos, rows } = stack(lane.items);
+    const nRows = rows + (lane.unassigned && !isAll ? 1 : 0);   // dodatkowy wiersz do rysowania (w „Wszystko” wiersz rysowania jest osobny)
+
+    const laneEl = document.createElement('div');
+    laneEl.className = 'lane' + (lane.unassigned ? ' nieprzypisane' : '');
+
+    const label = document.createElement('div');
+    label.className = 'lane-label';
+    const dot = document.createElement('span');
+    dot.className = 'lane-dot';
+    paintPerson(dot, lane.color || '');
+    const nazwa = document.createElement('span');
+    nazwa.className = 'nazwa';
+    nazwa.textContent = lane.name;
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = (lane.project || isAll) ? '' : lane.items.length;
+    if (lane.project) { label.title = '2× klik = edycja'; label.addEventListener('dblclick', () => openModal(lane.items[0])); }
+    label.append(dot, nazwa, n);
+
+    const track = document.createElement('div');
+    track.className = 'lane-track';
+    track.style.width = `${trackW}px`;
+    track.style.height = `${nRows * AppState.rowHeight}px`;
+    track.dataset.person = (lane.unassigned || lane.project) ? '' : lane.name;
+    track.dataset.rows = nRows;
+    track._items = lane.items;   // do podglądu „tu wyląduje” przy przeciąganiu
+
+    lane.items.forEach(p => {
+      const sub = pos.get(p.id);
+      const opoz = delayDays(p);
+      if (p.status === 'ongoing' && p.baselineStart && p.baselineEnd && (diffDays(p.baselineStart, p.start) !== 0 || opoz !== 0)) {
+        let gl = dateToPx(p.baselineStart), gw = dateToPx(p.baselineEnd) - gl;
+        if (gl < 0) { gw += gl; gl = 0; }
+        if (gw > 0) {
+          const ghost = document.createElement('div');
+          ghost.className = 'baseline-ghost';
+          ghost.style.left = `${gl}px`;
+          ghost.style.width = `${Math.max(AppState.minBlockWidth, gw)}px`;
+          ghost.style.top = `${sub * AppState.rowHeight + AppState.blockOffsetY}px`;
+          ghost.title = `Plan pierwotny: ${formatDate(p.baselineStart)} – ${formatDate(addDays(p.baselineEnd, -1))}`;
+          track.appendChild(ghost);
+        }
+      }
+      track.appendChild(makeKlocek(p, lane, sub));
+      p.milestones.forEach(m => {
+        const x = dateToPx(m.date);
+        if (x < 0 || x > trackW) return;
+        const top = sub * AppState.rowHeight + AppState.blockOffsetY;
+        const linia = document.createElement('div');
+        linia.className = 'km-linia';
+        linia.style.left = `${x}px`; linia.style.top = `${top}px`; linia.style.height = '48px';
+        const km = document.createElement('div');
+        const late = !m.done && m.date < startOfToday();
+        km.className = 'km' + (m.done ? ' done' : late ? ' late' : '');
+        km.style.left = `${x}px`; km.style.top = `${top - 7}px`;
+        const tip = `${p.title}\n◆ ${m.name} — ${formatDate(m.date)}${m.done ? ' ✓ osiągnięty' : late ? ` · po terminie ${diffDays(m.date, startOfToday())} dni` : ` · za ${diffDays(startOfToday(), m.date)} dni`}`;
+        km.addEventListener('mouseenter', e => showTooltip(e.clientX, e.clientY, tip));
+        km.addEventListener('mouseleave', hideTooltip);
+        km.addEventListener('dblclick', e => { e.stopPropagation(); openModal(p); });
+        track.append(linia, km);
+      });
+    });
+
+    laneEl.append(label, track);
+    DOM.timelineBody.appendChild(laneEl);
+
+    if (!isAll && (!lane.unassigned || lane.items.length)) {
+      const item = document.createElement('div');
+      item.className = 'legenda-item';
+      paintPerson(item, lane.color || '');
+      item.innerHTML = `<div class="legenda-kwadrat"></div><span>${esc(lane.name)}</span><span class="n">${lane.items.length}</span>`;
+      DOM.legendList.appendChild(item);
+    }
+  });
+  if (legend) legend.forEach(g => {
+    const item = document.createElement('div');
+    item.className = 'legenda-item';
+    paintPerson(item, g.name);
+    item.innerHTML = `<div class="legenda-kwadrat"></div><span>${esc(g.name || 'bez kupca')}</span><span class="n">${g.items.length}</span>`;
+    DOM.legendList.appendChild(item);
+  });
+  const today = startOfToday();
+  const tx = dateToPx(today);
+  if (tx >= 0 && tx <= trackW) {
+    const l = document.createElement('div');
+    l.className = 'dzis-linia';
+    l.style.left = `${AppState.labelWidth + tx}px`;
+    l.title = `Dziś: ${formatDate(today)}`;
+    DOM.timelineBody.appendChild(l);
+  }
+}
+
+function renderTabs() {
+  const box = f('zakladki');
+  box.innerHTML = '';
+  AppState.tabs.forEach(t => {
+    const active = t.id === AppState.activeTab;
+    const n = active ? AppState.projects.length : t.projects.length;
+    const el = document.createElement('div');
+    el.className = 'zakladka' + (active ? ' aktywna' : '');
+    el.setAttribute('role', 'tab');
+    el.setAttribute('aria-selected', active);
+    if (active) {
+      const inp = document.createElement('input');
+      inp.value = t.title;
+      inp.size = Math.max(4, t.title.length + 1);
+      inp.title = 'Kliknij, aby zmienić nazwę';
+      inp.readOnly = !Perm.isOwner;
+      inp.addEventListener('input', () => { inp.size = Math.max(4, inp.value.length + 1); });
+      inp.addEventListener('change', () => { t.title = cleanName(inp.value) || 'Bez nazwy'; inp.value = t.title; save(); });
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+      el.appendChild(inp);
+    } else {
+      const lbl = document.createElement('span');
+      lbl.textContent = t.title;
+      el.appendChild(lbl);
+      el.addEventListener('click', () => switchTab(t.id));
+    }
+    const ile = document.createElement('span');
+    ile.className = 'ile';
+    ile.textContent = n;
+    el.appendChild(ile);
+    if (active && AppState.tabs.length > 1) {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'zakladka-usun';
+      x.textContent = '✕';
+      x.title = 'Usuń zakładkę';
+      x.addEventListener('click', () => {
+        if (!confirm(`Usunąć zakładkę „${t.title}” razem z ${n} projektami?`)) return;
+        AppState.tabs = AppState.tabs.filter(x => x.id !== t.id);
+        AppState.activeTab = AppState.tabs[0].id;
+        AppState.projects = curTab().projects;
+        renderAll();
+      });
+      el.appendChild(x);
+    }
+    box.appendChild(el);
+  });
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.className = 'zakladka-plus';
+  plus.textContent = '+';
+  plus.title = 'Nowa zakładka';
+  plus.addEventListener('click', () => {
+    syncTab();
+    const t = { id: AppState.generateId(), title: 'Nowy portfel', projects: [] };
+    AppState.tabs.push(t);
+    AppState.activeTab = t.id;
+    AppState.projects = t.projects;
+    renderAll();
+    const inp = box.querySelector('.aktywna input');
+    if (inp) { inp.focus(); inp.select(); }
+  });
+  box.appendChild(plus);
+}
+function switchTab(id) {
+  syncTab();
+  AppState.activeTab = id;
+  AppState.projects = curTab().projects;
+  renderAll();
+}
+
+function renderAll() {
+  if (typeof renderJako === 'function') renderJako();
+  renderTabs();
+  if (typeof renderMiary === 'function') renderMiary();
+  renderRoleSelect();
+  renderScale();
+  renderLanes();
+  renderPortfolio();
+  save();
+}
+
+// 6. RYSOWANIE I PRZECIĄGANIE
+let dragState = null;
+let drawState = { active: false };
+let tempCreateState = { start: null, end: null, person: '' };
+
+DOM.timelineBody.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !Perm.isOwner || e.target.closest('.klocek')) return;
+  const track = e.target.closest('.lane-track');
+  if (!track) return;
+  e.preventDefault();
+  const rect = track.getBoundingClientRect();
+  const x = Math.max(0, e.clientX - rect.left);
+  const sub = Math.max(0, Math.floor((e.clientY - rect.top) / AppState.rowHeight));
+  track.appendChild(DOM.drawGhost);
+  DOM.drawGhost.style.display = 'block';
+  DOM.drawGhost.style.left = `${x}px`;
+  DOM.drawGhost.style.top = `${sub * AppState.rowHeight + AppState.blockOffsetY}px`;
+  DOM.drawGhost.style.width = '0px';
+  drawState = { active: true, startX: e.clientX, startLeftPx: x, currentLeft: x, currentWidth: 0, person: track.dataset.person || '' };
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !canEditAny()) return;
+  const target = e.target;
+  const klocek = target.closest('.klocek');
+  if (!klocek || target.classList.contains('klocek-delete')) return;
+  e.preventDefault();
+  const p = AppState.projects.find(x => x.id === klocek.dataset.id);
+  if (!p || !canEditCard(p)) return;
+  // Podwójne kliknięcie rozpoznajemy sami (drugie wciśnięcie w ciągu 450 ms na tym samym kaflu) — odporne na drgnięcie myszy/touchpada
+  const now = Date.now();
+  if (lastPress.id === p.id && now - lastPress.t < 450) { lastPress = { id: null, t: 0 }; hideTooltip(); openModal(p); return; }
+  lastPress = { id: p.id, t: now };
+  const base = { project: p, startX: e.clientX, startY: e.clientY, hasMoved: false, el: klocek, origStartPx: dateToPx(p.start) };
+  if (target.classList.contains('resize-handle')) {
+    dragState = { ...base, type: target.classList.contains('resize-left') ? 'left' : 'right', origEndPx: dateToPx(p.end) };
+  } else {
+    const track = klocek.parentElement;
+    dragState = { ...base, type: 'move', durationDays: diffDays(p.start, p.end), srcTrack: track, srcPerson: track.dataset.person || '',
+      srcRow: Math.round((parseFloat(klocek.style.top) - AppState.blockOffsetY) / AppState.rowHeight),
+      vertical: AppState.viewRole !== ALL_VIEW };   // w „Wszystko” wiersz = projekt, więc tylko w poziomie
+  }
+  klocek.classList.add('is-dragging');
+});
+
+// Swobodne przesuwanie: w poziomie = daty, w pionie = wiersz w pasie (także nowy, pusty wiersz na dole)
+// albo pas innej osoby (zmiana osoby w oglądanej roli). Klocek przeskakuje do wiersza, nad którym jest kursor.
+const DRAG_MIN = 6;                 // px ruchu, od których kliknięcie staje się przeciąganiem
+let lastPress = { id: null, t: 0 };
+function startFreeMove() {
+  // +1 pusty wiersz w każdym pasie na upuszczenie. Pasy wyżej rosną, więc przewijamy stronę o tyle samo,
+  // żeby chwycony klocek został dokładnie pod kursorem (bez skoku).
+  const before = dragState.srcTrack.getBoundingClientRect().top;
+  document.querySelectorAll('.lane-track').forEach(t => { t.style.transition = 'none'; t.style.height = `${(+t.dataset.rows + 1) * AppState.rowHeight}px`; });
+  const shift = dragState.srcTrack.getBoundingClientRect().top - before;
+  if (shift) window.scrollBy(0, shift);
+  dragState.srcTrack.style.zIndex = 20;
+}
+// Podgląd lądowania: liczymy układ pasa docelowego tak, jak policzy go render po upuszczeniu,
+// i rysujemy przerywaną ramkę dokładnie tam, gdzie kafel się znajdzie (z datami)
+let landingEl = null;
+function showLanding(t, leftPx) {
+  const p = dragState.project;
+  const start = pxToDate(leftPx), end = addDays(start, dragState.durationDays);
+  const items = (t.track._items || []).filter(x => x.id !== p.id).concat([{ ...p, start, end, rowHint: t.row }]);
+  const keep = lastDropped; lastDropped = p.id;
+  const layout = stack(items);
+  lastDropped = keep;
+  const row = layout.pos.get(p.id);
+  // kto zejdzie niżej (porównanie z obecnym układem pasa)
+  const now = new Map([...t.track.querySelectorAll('.klocek')].map(k => [k.dataset.id, Math.round((parseFloat(k.style.top) - AppState.blockOffsetY) / AppState.rowHeight)]));
+  dragState.pushed = items.filter(x => x.id !== p.id && now.has(x.id) && layout.pos.get(x.id) > now.get(x.id)).map(x => x.title);
+  if (!landingEl) { landingEl = document.createElement('div'); landingEl.className = 'drop-ghost'; }
+  if (landingEl.parentElement !== t.track) {
+    document.querySelectorAll('.lane-track.cel').forEach(x => x.classList.remove('cel'));
+    t.track.classList.add('cel');
+    t.track.appendChild(landingEl);
+  }
+  landingEl.style.left = `${Math.max(0, leftPx)}px`;
+  landingEl.style.width = `${parseFloat(dragState.el.style.width)}px`;
+  landingEl.style.top = `${row * AppState.rowHeight + AppState.blockOffsetY}px`;
+  const daty = dragState.el.querySelector('.klocek-daty');
+  if (daty) daty.textContent = `${formatDate(start)} - ${formatDate(addDays(end, -1))}`;   // daty na kaflu na żywo
+}
+function hideLanding() {
+  if (landingEl) landingEl.remove();
+  document.querySelectorAll('.lane-track.cel').forEach(x => x.classList.remove('cel'));
+}
+function dropTarget(clientY) {
+  const tracks = [...document.querySelectorAll('.lane-track')];
+  let t = tracks.find(tr => { const r = tr.getBoundingClientRect(); return clientY >= r.top && clientY < r.bottom; });
+  if (!t) t = clientY < tracks[0].getBoundingClientRect().top ? tracks[0] : tracks[tracks.length - 1];
+  const r = t.getBoundingClientRect();
+  const row = Math.max(0, Math.min(+t.dataset.rows, Math.floor((clientY - r.top) / AppState.rowHeight)));
+  return { track: t, row, person: t.dataset.person || '', top: r.top };
+}
+
+document.addEventListener('pointermove', (e) => {
+  if (drawState.active) {
+    const dx = e.clientX - drawState.startX;
+    if (dx >= 0) { drawState.currentLeft = drawState.startLeftPx; drawState.currentWidth = dx; }
+    else { drawState.currentLeft = Math.max(0, drawState.startLeftPx + dx); drawState.currentWidth = drawState.startLeftPx - drawState.currentLeft; }
+    DOM.drawGhost.style.left = `${drawState.currentLeft}px`;
+    DOM.drawGhost.style.width = `${drawState.currentWidth}px`;
+    const tempStart = pxToDate(drawState.currentLeft);
+    const tempEnd = pxToDate(drawState.currentLeft + Math.max(AppState.minBlockWidth, drawState.currentWidth));
+    showTooltip(e.clientX, e.clientY, `Od: ${formatDate(tempStart)}\nDo: ${formatDate(addDays(tempEnd, -1))}${drawState.person ? `\n${AppState.viewRole}: ${drawState.person}` : ''}`);
+    return;
+  }
+  if (!dragState) return;
+  e.preventDefault();
+  const dx = e.clientX - dragState.startX, dy = e.clientY - dragState.startY;
+  if (!dragState.hasMoved) {
+    if (Math.abs(dx) <= DRAG_MIN && Math.abs(dy) <= DRAG_MIN) return;   // drobne drgnięcie to jeszcze nie przeciąganie
+    dragState.hasMoved = true;
+    dragState.el.classList.add('w-ruchu');
+    if (dragState.type === 'move' && dragState.vertical) startFreeMove();
+  }
+  if (dragState.type === 'move') {
+    const newStartPx = Math.max(0, dragState.origStartPx + dx);
+    dragState.el.style.left = `${newStartPx}px`;
+    dragState.tempStart = pxToDate(newStartPx);
+    const lines = [`${formatDate(dragState.tempStart)} – ${formatDate(addDays(addDays(dragState.tempStart, dragState.durationDays), -1))}`];
+    if (dragState.vertical) {
+      const t = dropTarget(e.clientY);
+      dragState.target = t;
+      dragState.el.style.transform = `translateY(${dy}px)`;   // kafel jedzie swobodnie za kursorem
+      showLanding(t, newStartPx);
+      if (t.track !== dragState.srcTrack && norm(t.person) !== norm(dragState.srcPerson)) lines.push(`→ ${AppState.viewRole}: ${t.person || 'nieprzypisane'}`);
+      else if (t.row !== dragState.srcRow) lines.push(t.row >= +t.track.dataset.rows ? 'nowy wiersz' : `wiersz ${t.row + 1}`);
+      if (dragState.pushed && dragState.pushed.length) lines.push(`zepchnie niżej: ${dragState.pushed.join(', ')}`);
+    }
+    showTooltip(e.clientX, e.clientY, lines.join('\n'));
+  } else if (dragState.type === 'right') {
+    const newEndPx = Math.max(dragState.origStartPx + AppState.minBlockWidth, dragState.origEndPx + dx);
+    dragState.el.style.width = `${newEndPx - dragState.origStartPx}px`;
+    dragState.tempEnd = pxToDate(newEndPx);
+    showTooltip(e.clientX, e.clientY, `Koniec: ${formatDate(addDays(dragState.tempEnd, -1))}`);
+  } else if (dragState.type === 'left') {
+    const maxDx = dragState.origEndPx - dragState.origStartPx - AppState.minBlockWidth;
+    const newStartPx = Math.max(0, dragState.origStartPx + Math.min(dx, maxDx));
+    dragState.el.style.left = `${newStartPx}px`;
+    dragState.el.style.width = `${dragState.origEndPx - newStartPx}px`;
+    dragState.tempStart = pxToDate(newStartPx);
+    showTooltip(e.clientX, e.clientY, `Start: ${formatDate(dragState.tempStart)}`);
+  }
+});
+
+document.addEventListener('pointerup', () => {
+  if (drawState.active) {
+    drawState.active = false;
+    DOM.drawGhost.style.display = 'none';
+    hideTooltip();
+    const w = drawState.currentWidth < AppState.minBlockWidth ? defaultDrawPx() : drawState.currentWidth;
+    tempCreateState = { start: pxToDate(drawState.currentLeft), end: pxToDate(drawState.currentLeft + w), person: drawState.person };
+    openModal(null);
+    return;
+  }
+  if (!dragState) return;
+  const d = dragState, p = d.project;
+  let hasChanged = false;
+  if (d.hasMoved) {
+    if (d.type === 'move' && d.tempStart) {
+      if (+d.tempStart !== +p.start) { p.start = d.tempStart; p.end = addDays(p.start, d.durationDays); hasChanged = true; }
+      if (d.target) {
+        const laneChanged = d.target.track !== d.srcTrack && moveToLane(p, AppState.viewRole, d.srcPerson, d.target.person);
+        if (laneChanged || d.target.row !== d.srcRow) { p.rowHint = d.target.row; lastDropped = p.id; hasChanged = true; }
+      }
+    } else if (d.type === 'right' && d.tempEnd) {
+      p.end = d.tempEnd; hasChanged = true;
+    } else if (d.type === 'left' && d.tempStart) {
+      p.start = d.tempStart; hasChanged = true;
+    }
+  }
+  d.el.classList.remove('is-dragging', 'w-ruchu');
+  dragState = null;
+  hideTooltip();
+  hideLanding();
+  if (hasChanged) renderAll();
+  else if (d.hasMoved && d.vertical) renderLanes();   // nic się nie zmieniło — przywróć wysokości pasów
+});
+
+function showTooltip(x, y, text) {
+  DOM.tooltip.style.display = 'block';
+  DOM.tooltip.style.left = `${x + 16}px`;
+  DOM.tooltip.style.top = `${y + 16}px`;
+  DOM.tooltip.textContent = text;
+}
+function hideTooltip() { DOM.tooltip.style.display = 'none'; }
+
+// ===== KONIEC js-os (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-os@2026-11-06');

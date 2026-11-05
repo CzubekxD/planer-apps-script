@@ -1,0 +1,179 @@
+// js-miary — Pulpit miar przepływu (czas realizacji, przepustowość, Monte Carlo)
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 11. MIARY (pulpit)
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// ---------- obliczenia ----------
+const pctl = (arr, q) => { if (!arr.length) return null; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.ceil(q * a.length) - 1))]; };
+const mies = d => `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
+function metrics() {
+  const today = startOfToday();
+  const all = AppState.projects.filter(hasDates);
+  const done = all.filter(p => p.status === 'done' && p.startedAt && p.doneAt).map(p => ({ p, lt: diffDays(p.startedAt, p.doneAt) + 1, plan: (p.baselineStart && p.baselineEnd) ? diffDays(p.baselineStart, p.baselineEnd) : null }));
+  const lts = done.map(x => x.lt);
+  const P = { p50: pctl(lts, .5), p85: pctl(lts, .85), p95: pctl(lts, .95) };
+  const active = all.filter(p => p.status === 'ongoing' && p.startedAt).map(p => ({ p, age: diffDays(p.startedAt, today) + 1 })).sort((a, b) => b.age - a.age);
+  const weeks = []; for (let i = 51; i >= 0; i--) weeks.push(addDays(today, -7 * i));
+  const wip = weeks.map(d => all.filter(p => p.startedAt && p.startedAt <= d && (!p.doneAt || p.doneAt >= d)).length);
+  const months = []; for (let i = 11; i >= 0; i--) { const from = new Date(today.getFullYear(), today.getMonth() - i, 1), to = new Date(today.getFullYear(), today.getMonth() - i + 1, 1); months.push({ from, label: mies(from), n: done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length }); }
+  const tp = []; for (let i = 0; i < 26; i++) { const to = addDays(today, -7 * i), from = addDays(to, -7); tp.push(done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length); }
+  const withPlan = done.filter(x => x.plan > 0);
+  const ratios = withPlan.map(x => x.lt / x.plan);
+  const onTime = withPlan.length ? withPlan.filter(x => x.lt <= x.plan).length / withPlan.length : null;
+  const R = { r50: pctl(ratios, .5), r85: pctl(ratios, .85) };
+  // Monte Carlo: kolejne planowane projekty kończą się w tempie historycznej przepustowości tygodniowej
+  const planned = all.filter(p => p.status === 'planned').sort((a, b) => a.start - b.start);
+  const N = planned.length, TR = 2000, hits = planned.map(() => []);
+  const r = rng(7);
+  if (N && tp.some(x => x > 0)) for (let t = 0; t < TR; t++) {
+    let cum = 0, w = 0, k = 0;
+    while (k < N && w < 520) { w++; cum += tp[Math.floor(r() * tp.length)]; while (k < N && cum > k) { hits[k].push(w); k++; } }
+  }
+  const mc = planned.map((p, i) => {
+    const w50 = pctl(hits[i], .5), w85 = pctl(hits[i], .85);
+    return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: addDays(p.end, -1), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(diffDays(p.start, p.end) * R.r85)) : null };
+  });
+  const wipNow = active.length + all.filter(p => p.status === 'ongoing' && !p.startedAt).length;
+  return { today, done, lts, P, active, weeks, wip, months, tp, ratios, onTime, R, mc, wipNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
+}
+
+// ---------- mini-wykresy SVG ----------
+const W = 640;
+function svgLine(vals, xlabels, { h = 200, limit = null, step = 13 } = {}) {
+  const pad = { l: 30, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b;
+  const max = Math.max(1, ...vals, limit || 0) * 1.15;
+  const X = i => pad.l + (i / Math.max(1, vals.length - 1)) * w, Y = v => pad.t + hh - (v / max) * hh;
+  let s = `<svg class="mi" viewBox="0 0 ${W} ${h}">`;
+  for (let v = 0; v <= max; v += Math.max(1, Math.ceil(max / 4))) s += `<line class="siatka" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${pad.l - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+  if (limit) s += `<line class="lim" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(limit)}" y2="${Y(limit)}"/><text class="lbl-lim" x="${W - pad.r}" y="${Y(limit) - 5}" text-anchor="end">limit ${limit}</text>`;
+  s += `<polyline class="seria" points="${vals.map((v, i) => `${X(i)},${Y(v)}`).join(' ')}"/>`;
+  xlabels.forEach((l, i) => { if (i % step === 0 || i === xlabels.length - 1) s += `<text x="${X(i)}" y="${h - 6}" text-anchor="middle">${l}</text>`; });
+  return s + `<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/></svg>`;
+}
+function svgBars(vals, labels, { h = 180 } = {}) {
+  const pad = { l: 26, r: 6, t: 14, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b, max = Math.max(1, ...vals);
+  const bw = w / vals.length;
+  let s = `<svg class="mi" viewBox="0 0 ${W} ${h}">`;
+  vals.forEach((v, i) => { const bh = (v / max) * hh; s += `<rect class="slupek" x="${pad.l + i * bw + 4}" y="${pad.t + hh - bh}" width="${bw - 8}" height="${bh}" rx="3"/><text x="${pad.l + i * bw + bw / 2}" y="${pad.t + hh - bh - 4}" text-anchor="middle">${v || ''}</text><text x="${pad.l + i * bw + bw / 2}" y="${h - 6}" text-anchor="middle">${labels[i]}</text>`; });
+  return s + `<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/></svg>`;
+}
+function marks(s, X, top, bottom, P, unit = 'd') {
+  [['p50', 'LT50'], ['p85', 'LT85'], ['p95', 'LT95']].forEach(([k, n], i) => { if (P[k] == null) return; const x = X(P[k]); s.push(`<line class="${k}" x1="${x}" x2="${x}" y1="${top}" y2="${bottom}"/><text class="lbl-${k}" x="${x + 4}" y="${top + 12 + i * 13}">${n} ${P[k]} ${unit}</text>`); });
+}
+function svgHist(lts, P, { h = 200 } = {}) {
+  const pad = { l: 26, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b;
+  if (!lts.length) return '<div class="pusto">Brak zakończonych projektów.</div>';
+  const bin = 15, maxLt = Math.max(...lts), nb = Math.ceil(maxLt / bin) + 1, cnt = Array(nb).fill(0);
+  lts.forEach(v => cnt[Math.floor(v / bin)]++);
+  const max = Math.max(...cnt), bw = w / nb, X = v => pad.l + (v / (nb * bin)) * w;
+  const s = [`<svg class="mi" viewBox="0 0 ${W} ${h}">`];
+  cnt.forEach((c, i) => { const bh = (c / max) * hh; if (c) s.push(`<rect class="slupek" x="${pad.l + i * bw + 1}" y="${pad.t + hh - bh}" width="${bw - 2}" height="${bh}" rx="2"/>`); if (i % 2 === 0) s.push(`<text x="${pad.l + i * bw}" y="${h - 6}" text-anchor="middle">${i * bin}</text>`); });
+  marks(s, X, pad.t, pad.t + hh, P);
+  s.push(`<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/><text x="${W - pad.r}" y="${h - 6}" text-anchor="end">dni</text></svg>`);
+  return s.join('');
+}
+function svgScatter(done, P, { h = 220 } = {}) {
+  const pad = { l: 34, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b;
+  if (!done.length) return '<div class="pusto">Brak zakończonych projektów.</div>';
+  const t0 = Math.min(...done.map(x => x.p.doneAt)), t1 = Math.max(+startOfToday(), ...done.map(x => +x.p.doneAt));
+  const maxY = Math.max(...done.map(x => x.lt)) * 1.1;
+  const X = t => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * w, Y = v => pad.t + hh - (v / maxY) * hh;
+  const s = [`<svg class="mi" viewBox="0 0 ${W} ${h}">`];
+  [['p50', 'LT50'], ['p85', 'LT85'], ['p95', 'LT95']].forEach(([k, n]) => { if (P[k] == null) return; s.push(`<line class="${k}" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(P[k])}" y2="${Y(P[k])}"/><text class="lbl-${k}" x="${W - pad.r}" y="${Y(P[k]) - 4}" text-anchor="end">${n} ${P[k]} d</text>`); });
+  done.forEach(x => s.push(`<circle class="pkt ${x.lt > P.p85 ? 'zly' : ''}" cx="${X(+x.p.doneAt)}" cy="${Y(x.lt)}" r="5"><title>${esc(x.p.title)} — ${x.lt} dni, zamknięty ${formatDate(x.p.doneAt)}</title></circle>`));
+  for (let i = 0; i <= 4; i++) { const t = t0 + (t1 - t0) * i / 4; s.push(`<text x="${X(t)}" y="${h - 6}" text-anchor="middle">${mies(new Date(t))}</text>`); }
+  s.push(`<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/><text x="${pad.l - 6}" y="${pad.t + 10}" text-anchor="end">dni</text></svg>`);
+  return s.join('');
+}
+function ageRows(active, P) {
+  if (!active.length) return '<div class="pusto">Brak projektów w trakcie z datą startu.</div>';
+  const max = Math.max(P.p95 || 0, ...active.map(a => a.age)) * 1.05;
+  const pc = v => `${Math.min(100, (v / max) * 100)}%`;
+  const vars = `--a50:${pc(P.p50 || 0)};--a85:${pc(P.p85 || 0)}`;
+  let s = `<div class="wiek" style="${vars}">`;
+  active.forEach(a => { s += `<div class="wiek-w"><div class="t" title="${esc(a.p.title)}">${esc(a.p.title)}</div><div class="wiek-tor"><i class="${a.age > P.p85 ? 'zly' : ''}" style="width:${pc(a.age)}"></i></div><div class="n">${a.age} d</div></div>`; });
+  s += `<div class="wiek-skala"><div></div><div>${[['LT50', P.p50], ['LT85', P.p85], ['LT95', P.p95]].filter(x => x[1]).map(([n, v]) => `<em style="left:${pc(v)}">${n} ${v} d</em>`).join('')}</div><div></div></div>`;
+  return s + '</div>';
+}
+const fmtPct = v => v == null ? '—' : `${Math.round(v * 100)}%`;
+const fmtX = v => v == null ? '—' : `×${v.toFixed(2).replace('.', ',')}`;
+
+
+function svgSlip(done, R, { h = 200 } = {}) {
+  const pts = done.filter(x => x.plan > 0).map(x => ({ x, r: x.lt / x.plan }));
+  if (!pts.length) return '<div class="pusto">Brak zamkniętych projektów z planem pierwotnym.</div>';
+  const pad = { l: 26, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b;
+  const bin = 0.25, maxR = Math.max(2, ...pts.map(p => p.r)), nb = Math.ceil(maxR / bin) + 1, cnt = Array(nb).fill(0);
+  pts.forEach(p => cnt[Math.min(nb - 1, Math.floor(p.r / bin))]++);
+  const max = Math.max(...cnt), bw = w / nb, X = v => pad.l + (v / (nb * bin)) * w;
+  const s = [`<svg class="mi" viewBox="0 0 ${W} ${h}">`];
+  cnt.forEach((c, i) => { const bh = (c / max) * hh; if (c) s.push(`<rect class="slupek ${i * bin >= 1 ? 'zly' : ''}" x="${pad.l + i * bw + 1}" y="${pad.t + hh - bh}" width="${bw - 2}" height="${bh}" rx="2"><title>×${(i * bin).toFixed(2)}–${((i + 1) * bin).toFixed(2)}: ${c} proj.</title></rect>`); if (i % 2 === 0) s.push(`<text x="${pad.l + i * bw}" y="${h - 6}" text-anchor="middle">×${(i * bin).toFixed(1).replace('.', ',')}</text>`); });
+  const x1 = X(1); s.push(`<line class="plan1" x1="${x1}" x2="${x1}" y1="${pad.t}" y2="${pad.t + hh}"/><text class="lbl-plan" x="${x1 - 4}" y="${pad.t + 12}" text-anchor="end">plan ×1</text>`);
+  [['r50', 'p50', 'mediana'], ['r85', 'p85', 'P85']].forEach(([k, c, n], i) => { if (R[k] == null) return; const x = X(R[k]); s.push(`<line class="${c}" x1="${x}" x2="${x}" y1="${pad.t}" y2="${pad.t + hh}"/><text class="lbl-${c}" x="${x + 4}" y="${pad.t + 12 + i * 13}">${n} ×${R[k].toFixed(2).replace('.', ',')}</text>`); });
+  s.push(`<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/></svg>`);
+  return s.join('');
+}
+function slipList(done) {
+  const rows = done.filter(x => x.plan > 0).map(x => ({ x, r: x.lt / x.plan })).sort((a, b) => b.r - a.r).slice(0, 5);
+  if (!rows.length) return '';
+  return `<div class="cut tabw"><table><thead><tr><th>Projekt</th><th>Plan</th><th>Faktycznie</th><th>Mnożnik</th></tr></thead><tbody>${rows.map(o => `<tr><td><b>${esc(o.x.p.title)}</b><div class="tekst-pomocniczy">${esc(METHODS[methodOf(o.x.p)].label)}</div></td><td>${o.x.plan} d</td><td>${o.x.lt} d</td><td><span class="tag ${o.r > 1.25 ? 'zly' : o.r > 1 ? 'uw' : 'ok'}">${fmtX(o.r)}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ---------- pulpit ----------
+function pulpit(m) {
+  const stuck = m.active.filter(a => a.age > m.P.p85).length;
+  return `<p class="mi-uwaga">Liczone z zakładki „${esc((curTab() || {}).title || '')}”: ${m.done.length} zakończonych, ${m.active.length} w trakcie, ${m.mc.length} planowanych.</p>
+  <div class="mi-kpi">
+    <div><b>${m.P.p85 ?? '—'} d</b><span>LT85 — 85% projektów kończy się w tylu dniach</span></div>
+    <div class="${m.wipNow > AppState.wipLimit * 4 ? 'al' : ''}"><b>${m.wipNow}</b><span>WIP — projekty w trakcie</span></div>
+    <div class="${stuck ? 'al' : ''}"><b>${stuck}</b><span>Starsze niż LT85</span></div>
+    <div><b>${m.tpMean.toFixed(1).replace('.', ',')}</b><span>Przepustowość / tydz. (26 tyg.)</span></div>
+    <div class="${m.onTime != null && m.onTime < .5 ? 'al' : ''}"><b>${fmtPct(m.onTime)}</b><span>Zamknięte w planie</span></div>
+    <div><b>${fmtX(m.R.r85)}</b><span>Poślizg P85: faktyczny / planowany</span></div>
+  </div>
+  <div class="mi-grid">
+    <div class="mi-karta szer"><h3>Wiek projektów w trakcie</h3><div class="pod">Pas: zielony do LT50, żółty do LT85, czerwony powyżej. Czerwony słupek = projekt utknął.</div>${malo(m.done.length)}${ageRows(m.active, m.P)}</div>
+    <div class="mi-karta"><h3>WIP portfela — 52 tygodnie</h3><div class="pod">Ile projektów jest naraz w trakcie</div>${svgLine(m.wip, m.weeks.map(mies))}</div>
+    <div class="mi-karta"><h3>Przepustowość miesięczna</h3><div class="pod">Projekty zamknięte w miesiącu</div>${svgBars(m.months.map(x => x.n), m.months.map(x => x.label.split(' ')[0]))}</div>
+    <div class="mi-karta"><h3>Histogram czasu realizacji</h3><div class="pod">Start faktyczny → zamknięcie, koszyki po 15 dni</div>${malo(m.done.length)}${svgHist(m.lts, m.P)}</div>
+    <div class="mi-karta"><h3>Scatterplot czasu realizacji</h3><div class="pod">Każda kropka to zamknięty projekt; czerwone powyżej LT85</div>${svgScatter(m.done, m.P)}</div>
+    <div class="mi-karta"><h3>Poślizg — faktyczny / planowany czas trwania</h3><div class="pod">Zamknięte projekty z planem pierwotnym. Na prawo od „plan ×1” = trwało dłużej niż plan. P85 to mnożnik do nowych planów.</div>${malo(m.done.filter(x => x.plan > 0).length)}${svgSlip(m.done, m.R)}</div>
+    <div class="mi-karta"><h3>Gdzie poślizg był największy</h3><div class="pod">Top 5 zamkniętych projektów wg mnożnika faktyczny / planowany</div>${slipList(m.done) || '<div class="pusto">Brak danych.</div>'}</div>
+    <div class="mi-karta szer"><h3>Prognoza Monte Carlo — planowane projekty</h3><div class="pod">2000 symulacji z przepustowości tygodniowej ostatnich 26 tygodni, w kolejności startu. „Plan × poślizg P85” = koniec, jeśli projekt poślizgnie się jak 85% dotychczasowych. Pasek: okno P50–P85 vs plan (┆).</div>${malo(m.done.length)}${mcTable(m, true)}</div>
+  </div>`;
+}
+function mcTable(m, cut) {
+  if (!m.mc.length) return '<div class="pusto">Brak planowanych projektów.</div>';
+  const ds = m.mc.flatMap(x => [x.d85, x.target, x.rcf]).filter(Boolean); const span = { a: +m.today, b: Math.max(+m.today + 1, ...ds.map(Number)) };
+  const pos = d => `${Math.max(0, Math.min(100, ((d - span.a) / (span.b - span.a)) * 100))}%`;
+  let cutDone = false;
+  const rows = m.mc.map((x, i) => {
+    const late = x.d85 && x.d85 > x.target, mid = x.d50 && x.d50 <= x.target && late;
+    const tag = !x.d85 ? '<span class="tag uw">brak danych</span>' : !late ? '<span class="tag ok">w terminie</span>' : mid ? '<span class="tag uw">ryzyko</span>' : '<span class="tag zly">nie zdąży</span>';
+    const cls = cut && late && !cutDone ? (cutDone = true, 'linia-ciecia') : '';
+    const okno = cut ? `<td><div class="okno">${x.d50 && x.d85 ? `<i style="left:${pos(x.d50)};width:calc(${pos(x.d85)} - ${pos(x.d50)})"></i>` : ''}<s style="left:${pos(x.target)}" title="plan"></s></div></td>` : '';
+    return `<tr class="${cls}"><td>${i + 1}</td><td><b>${esc(x.p.title)}</b></td><td>${formatDate(x.target)}</td><td>${formatDate(x.d50)}</td><td><b>${formatDate(x.d85)}</b></td><td>${formatDate(x.rcf)}</td>${okno}<td>${tag}</td></tr>`;
+  }).join('');
+  return `<div class="cut tabw"><table><thead><tr><th>#</th><th>Projekt</th><th>Plan końca</th><th>P50</th><th>P85</th><th title="Plan × poślizg P85 z historii zamkniętych">Plan × poślizg P85</th>${cut ? '<th>Okno P50–P85 vs plan ┆</th>' : ''}<th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+const malo = n => n < 10 ? `<div class="mi-malo">Mało danych: ${n} zamkniętych projektów. Percentyle i prognozy stają się wiarygodne od ok. 10.</div>` : '';
+// ---------- widok Oś czasu / Miary ----------
+let widok = 'os';
+try { if (localStorage.getItem('planer.widok2') === 'miary') widok = 'miary'; } catch (e) {}
+function renderMiary() { if (widok === 'miary') f('miaryRoot').innerHTML = pulpit(metrics()); }
+function applyWidok() {
+  document.querySelector('main.container').hidden = widok !== 'os';
+  f('miaryRoot').hidden = widok !== 'miary';
+  document.querySelectorAll('.widok-przel .btn').forEach(b => { b.classList.toggle('on', b.dataset.view === widok); b.setAttribute('aria-pressed', b.dataset.view === widok); });
+  try { localStorage.setItem('planer.widok2', widok); } catch (e) {}
+  renderMiary();
+}
+document.querySelectorAll('.widok-przel .btn').forEach(b => b.addEventListener('click', () => { widok = b.dataset.view; applyWidok(); }));
+
+// START
+applyWidok();
+renderAll();
+
+// ===== KONIEC js-miary (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-miary@2026-11-06');

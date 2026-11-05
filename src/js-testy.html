@@ -1,0 +1,131 @@
+// js-testy — Testy — uruchom: adres web appa + ?test
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 12. TESTY — uruchom dopisując ?test do adresu (planer.html?test). Nic nie zapisują.
+const TESTS = [];
+const test = (name, fn) => TESTS.push({ name, fn });
+const eq = (got, exp) => { if (JSON.stringify(got) !== JSON.stringify(exp)) throw new Error(`jest ${JSON.stringify(got)}, oczekiwano ${JSON.stringify(exp)}`); };
+const D = (y, m, d) => new Date(y, m - 1, d);
+const L = DATE_LIB;
+
+// --- daty ---
+test('zapis i odczyt daty wraca do tej samej daty', () => eq(L.toISO(L.fromISO('2026-11-04')), '2026-11-04'));
+test('nieistniejąca data (30 lutego) jest odrzucana, a nie zamieniana na 2 marca', () => eq(L.fromISO('2026-02-30'), null));
+test('zły format daty jest odrzucany', () => { eq(L.fromISO('04.11.2026'), null); eq(L.fromISO(''), null); });
+test('koniec wyłączny: projekt do 24.12 ma end = 25.12', () => eq(L.toISO(L.addDays(D(2026, 12, 24), 1)), '2026-12-25'));
+test('marzec ma 30 dni różnicy mimo zmiany czasu (doba 23 h)', () => eq(L.diffDays(D(2027, 3, 1), D(2027, 3, 31)), 30));
+test('październik: 30 dni mimo zmiany czasu (doba 25 h)', () => eq(L.diffDays(D(2026, 10, 1), D(2026, 10, 31)), 30));
+test('dodanie 1 dnia w noc zmiany czasu zostaje o północy', () => { const d = L.addDays(D(2027, 3, 27), 1); eq([d.getDate(), d.getHours()], [28, 0]); });
+test('tydzień ISO: 4.11.2026 = T45', () => eq(L.isoWeek(D(2026, 11, 4)), 45));
+test('tydzień ISO: 1.01.2027 = T53 (roku 2026)', () => eq(L.isoWeek(D(2027, 1, 1)), 53));
+test('tydzień ISO: 30.12.2024 = T1 (roku 2025)', () => eq(L.isoWeek(D(2024, 12, 30)), 1));
+test('tydzień ISO: 4.01.2027 = T1', () => eq(L.isoWeek(D(2027, 1, 4)), 1));
+
+// --- oś ---
+const AX = {
+  day:   { origin: D(2026, 11, 1), pxPerDay: 36, monthWidth: 120 },
+  week:  { origin: D(2026, 11, 1), pxPerDay: 20, monthWidth: 120 },
+  month: { origin: D(2026, 11, 1), pxPerDay: null, monthWidth: 120 }
+};
+test('początek osi = 0 px we wszystkich skalach', () => Object.values(AX).forEach(a => eq(L.toPx(a.origin, a), 0)));
+test('dni: 4.11 = 3 × 36 px', () => eq(L.toPx(D(2026, 11, 4), AX.day), 108));
+test('tygodnie: tydzień = 140 px', () => eq(L.toPx(D(2026, 11, 8), AX.week) - L.toPx(D(2026, 11, 1), AX.week), 140));
+test('miesiące: każdy miesiąc ma 120 px (luty też)', () => { eq(L.toPx(D(2027, 3, 1), AX.month) - L.toPx(D(2027, 2, 1), AX.month), 120); eq(L.toPx(D(2027, 11, 1), AX.month), 12 * 120); });
+test('każdy dzień przez 2 lata: data → piksel → ta sama data (wszystkie skale)', () => {
+  Object.entries(AX).forEach(([k, a]) => {
+    for (let d = new Date(a.origin), i = 0; i < 730; i++, d = L.addDays(d, 1)) {
+      const back = L.fromPx(L.toPx(d, a), a);
+      if (L.toISO(back) !== L.toISO(d)) throw new Error(`${k}: ${L.toISO(d)} wraca jako ${L.toISO(back)}`);
+    }
+  });
+});
+test('oś od wybranego dnia (18.11): ten dzień = 0 px we wszystkich skalach', () => Object.values(AX).forEach(a => eq(L.toPx(D(2026, 11, 18), { ...a, origin: D(2026, 11, 18) }), 0)));
+test('oś od 18.11: każdy dzień przez 2 lata wraca do tej samej daty (wszystkie skale)', () => {
+  Object.entries(AX).forEach(([k, a0]) => { const a = { ...a0, origin: D(2026, 11, 18) };
+    for (let d = new Date(a.origin), i = 0; i < 730; i++, d = L.addDays(d, 1)) { const back = L.fromPx(L.toPx(d, a), a); if (L.toISO(back) !== L.toISO(d)) throw new Error(`${k}: ${L.toISO(d)} wraca jako ${L.toISO(back)}`); } });
+});
+test('oś od 18.11, miesiące: grudzień nadal ma 120 px', () => { const a = { ...AX.month, origin: D(2026, 11, 18) }; eq(L.toPx(D(2027, 1, 1), a) - L.toPx(D(2026, 12, 1), a), 120); });
+test('oś rośnie: późniejszy dzień nigdy nie ma mniejszego piksela', () => {
+  Object.entries(AX).forEach(([k, a]) => {
+    let prev = -1;
+    for (let d = new Date(a.origin), i = 0; i < 730; i++, d = L.addDays(d, 1)) { const x = L.toPx(d, a); if (x <= prev) throw new Error(`${k}: ${L.toISO(d)}`); prev = x; }
+  });
+});
+
+// --- uprawnienia (ta sama logika co w Code.gs) ---
+const P0 = () => ({ wipLimit: 2, horizonMonths: 20, tabs: [{ id: 't1', title: 'Portfolio', projects: [
+  { id: 'a', title: 'Moja karta Jana', editors: ['jan@firma.pl'], start: '2026-11-01', end: '2026-11-11', status: 'planned' },
+  { id: 'b', title: 'Cudza karta', editors: [], start: '2026-11-01', end: '2026-11-11', status: 'planned' }
+] }] });
+const merge = (fn, user = 'jan@firma.pl') => { const st = P0(), inc = P0(); fn(inc); return PLAN_LIB.mergeForEditor(st, inc, user); };
+const card = (plan, id) => plan.tabs[0].projects.find(p => p.id === id);
+test('edytor zmienia termin swojej karty → zapisane', () => { const r = merge(p => { p.tabs[0].projects[0].start = '2026-11-03'; }); eq(card(r.plan, 'a').start, '2026-11-03'); eq(r.ignored, false); });
+test('edytor zmienia cudzą kartę → pominięte', () => { const r = merge(p => { p.tabs[0].projects[1].title = 'HACK'; }); eq(card(r.plan, 'b').title, 'Cudza karta'); eq(r.ignored, true); });
+test('edytor dopisuje kolegę do edytorów → pominięte', () => { const r = merge(p => { p.tabs[0].projects[0].editors.push('kolega@firma.pl'); }); eq(card(r.plan, 'a').editors, ['jan@firma.pl']); });
+test('edytor dodaje projekt → pominięte', () => { const r = merge(p => { p.tabs[0].projects.push({ id: 'c', title: 'Nowy' }); }); eq(r.plan.tabs[0].projects.length, 2); eq(r.ignored, true); });
+test('edytor usuwa projekt → projekt zostaje', () => { const r = merge(p => { p.tabs[0].projects = p.tabs[0].projects.slice(0, 1); }); eq(r.plan.tabs[0].projects.length, 2); });
+test('edytor zmienia limit WIP i nazwę zakładki → pominięte', () => { const r = merge(p => { p.wipLimit = 9; p.tabs[0].title = 'X'; }); eq([r.plan.wipLimit, r.plan.tabs[0].title], [2, 'Portfolio']); });
+test('wielkość liter w e-mailu nie ma znaczenia', () => { const r = merge(p => { p.tabs[0].projects[0].start = '2026-11-05'; }, 'Jan@Firma.pl'); eq(card(r.plan, 'a').start, '2026-11-05'); });
+test('osoba spoza kart nie zmienia niczego', () => { const r = merge(p => { p.tabs[0].projects[0].start = '2026-12-01'; }, 'obcy@firma.pl'); eq(r.plan, P0()); });
+test('dziennik pokazuje koniec włącznie (end 11.11 → „10.11”)', () => { const a = P0(), b = P0(); b.tabs[0].projects[0].end = '2026-11-25'; eq(PLAN_LIB.describeChanges(a, b), ['„Moja karta Jana”: termin 01.11–10.11 → 01.11–24.11']); });
+test('dziennik: brak zmian = pusta lista', () => eq(PLAN_LIB.describeChanges(P0(), P0()), []));
+test('zmiana samego planu pierwotnego (rebaseline) jest zmianą — serwer ją zapisze', () => { const b = P0(); b.tabs[0].projects[0].baselineEnd = '2026-11-20'; eq(PLAN_LIB.describeChanges(P0(), b), ['„Moja karta Jana”: plan pierwotny']); });
+test('zmiana kolejności kart też jest zmianą', () => { const b = P0(); b.tabs[0].projects.reverse(); eq(PLAN_LIB.describeChanges(P0(), b).length, 1); });
+test('przełączenie zakładki (activeTab) to nie zmiana planu', () => { const a = P0(), b = P0(); a.activeTab = 't1'; b.activeTab = 't2'; eq(PLAN_LIB.describeChanges(a, b), []); });
+test('edytor przenosi swoją kartę do innej zakładki → pominięte i zgłoszone', () => { const r = merge(p => { p.tabs.push({ id: 't2', title: 'Inna', projects: [p.tabs[0].projects.shift()] }); }); eq([r.plan.tabs.length, r.plan.tabs[0].projects.length, r.ignored], [1, 2, true]); });
+test('e-maile: małe litery, bez powtórzeń, bez śmieci', () => eq(parseEmails('Jan@Firma.pl; jan@firma.pl, ,nie-email anna@firma.pl'), ['jan@firma.pl', 'anna@firma.pl']));
+
+// --- widok osi: „nie dotyczy”, pusty pas nieprzypisanych, widok „Wszystko” ---
+test('„nie dotyczy”: N/A, n/d, nie dotyczy, myślnik', () => eq(['N/A', 'n/d', 'NA', 'nie dotyczy', '-', '–'].map(isNA), [true, true, true, true, true, true]));
+test('„nie dotyczy” nie łapie imion (Nadia, Ania, Natalia)', () => eq(['Nadia', 'Ania', 'Natalia', 'Dan'].map(isNA), [false, false, false, false]));
+const withLanes = (projects, role, fn) => {
+  const keep = [AppState.projects, AppState.viewRole, AppState.showDone];
+  try { AppState.projects = projects.map(normProject); AppState.viewRole = role; AppState.showDone = false; return fn(buildLanes()); }
+  finally { [AppState.projects, AppState.viewRole, AppState.showDone] = keep; }
+};
+const PR = (id, kupiec, status = 'planned') => { const s = toLocalISO(AppState.globalStartDate), e = toLocalISO(addDays(AppState.globalStartDate, 30)); return { id, title: id, status, start: s, end: e, assignments: kupiec ? [{ group: 'team', role: 'Kupiec', person: kupiec }] : [] }; };
+test('N/A: projekt nie dostaje pasa „N/A” i nie trafia do nieprzypisanych', () => withLanes([PR('a', 'Jan'), PR('b', 'N/A')], 'Kupiec', L => eq([L.map(l => l.name), L.na], [['Jan'], 1])));
+test('pas „nieprzypisane” znika, gdy wszystko jest przypisane', () => withLanes([PR('a', 'Jan')], 'Kupiec', L => eq(L.some(l => l.unassigned), false)));
+test('pas „nieprzypisane” jest, gdy ktoś nie ma osoby', () => withLanes([PR('a', 'Jan'), PR('b', '')], 'Kupiec', L => eq(L.find(l => l.unassigned).items.length, 1)));
+test('„Wszystko”: wiersz na projekt, zakończone ukryte, kolor = kupiec', () => withLanes([PR('a', 'Jan'), PR('b', 'N/A'), PR('c', 'Ewa', 'done')], ALL_VIEW, L => eq(L.filter(l => l.project).map(l => [l.name, l.color]), [['a', 'Jan'], ['b', '']])));
+test('obciążenie WIP nie liczy „N/A” jako osoby', () => eq([...teamPeople(normProject(PR('x', 'N/A'))).keys()], []));
+
+// --- swobodne przesuwanie: wiersze i zmiana pasa ---
+const SP = (id, from, to, rowHint = null) => ({ id, start: L.addDays(D(2026, 11, 1), from), end: L.addDays(D(2026, 11, 1), to), rowHint });
+test('bez wskazania wiersza: klocki układają się od góry', () => { const r = stack([SP('a', 0, 10), SP('b', 5, 15), SP('c', 12, 20)]); eq([r.pos.get('a'), r.pos.get('b'), r.pos.get('c'), r.rows], [0, 1, 0, 2]); });
+test('klocek przeciągnięty do nowego wiersza zostaje niżej', () => { const r = stack([SP('a', 0, 10), SP('c', 12, 20, 1)]); eq([r.pos.get('a'), r.pos.get('c'), r.rows], [0, 1, 2]); });
+test('klocek za innym w tym samym wierszu (styk dat) zostaje obok', () => { const r = stack([SP('a', 0, 10, 0), SP('b', 10, 20, 0)]); eq([r.pos.get('a'), r.pos.get('b'), r.rows], [0, 0, 1]); });
+test('zajęty wiersz: klocek schodzi niżej, nie nachodzi na inny', () => { const r = stack([SP('a', 0, 10, 0), SP('b', 5, 15, 0)]); eq(r.pos.get('a') !== r.pos.get('b'), true); });
+test('puste wiersze są ściągane (wiersz 7 przy 1 klocku = wiersz 1)', () => { const r = stack([SP('a', 0, 10, 7)]); eq([r.pos.get('a'), r.rows], [0, 1]); });
+test('przeniesienie do pasa innej osoby zmienia osobę w roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }, { group: 'team', role: 'Lider', person: 'Mati' }] }; moveToLane(p, 'Kupiec', 'Jan', 'Ewa'); eq(p.assignments.map(a => `${a.role}:${a.person}`), ['Lider:Mati', 'Kupiec:Ewa']); });
+test('przeniesienie do „nieprzypisane” usuwa osobę z tej roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }] }; moveToLane(p, 'Kupiec', 'Jan', ''); eq(p.assignments, []); });
+test('dziennik: zmiana miejsca w pasie jest opisana', () => { const a = P0(), b = P0(); b.tabs[0].projects[0].rowHint = 2; eq(PLAN_LIB.describeChanges(a, b), ['„Moja karta Jana”: miejsce w pasie']); });
+
+// --- scalanie przy konflikcie zapisu (dwie osoby / dwie karty naraz) ---
+const MP = (...projects) => ({ wipLimit: 2, horizonMonths: 20, tabs: [{ id: 't1', title: 'Portfolio', projects: projects.map(([id, title]) => ({ id, title })) }] });
+const titles = r => r.plan.tabs[0].projects.map(p => p.title);
+test('scalanie: oni dodali projekt, ja zmieniłem inny → oba zostają', () => { const r = mergePlans(MP(['a', 'A']), MP(['a', 'A moje']), MP(['a', 'A'], ['b', 'B ich'])); eq([titles(r), r.clashes], [['A moje', 'B ich'], []]); });
+test('scalanie: oboje zmieniliśmy ten sam projekt → moja wersja + zgłoszenie', () => { const r = mergePlans(MP(['a', 'A']), MP(['a', 'A moje']), MP(['a', 'A ich'])); eq([titles(r), r.clashes], [['A moje'], ['A moje']]); });
+test('scalanie: ja usunąłem, oni zmienili → projekt zostaje (ich wersja)', () => { const r = mergePlans(MP(['a', 'A'], ['b', 'B']), MP(['b', 'B']), MP(['a', 'A ich'], ['b', 'B'])); eq(titles(r), ['A ich', 'B']); });
+test('scalanie: oni usunęli, ja nie ruszałem → projekt znika', () => { const r = mergePlans(MP(['a', 'A'], ['b', 'B']), MP(['a', 'A'], ['b', 'B']), MP(['b', 'B'])); eq(titles(r), ['B']); });
+test('scalanie: mój nowy projekt + ich nowy projekt → oba', () => { const r = mergePlans(MP(['a', 'A']), MP(['a', 'A'], ['m', 'Mój']), MP(['a', 'A'], ['t', 'Ich'])); eq(titles(r).sort(), ['A', 'Ich', 'Mój']); });
+
+// Testy idą w tle. Okno pokazuje się WYŁĄCZNIE przy NOK i wymienia tylko testy, które nie przeszły.
+// Przy wszystkich OK nic się nie pojawia — wynik jest tylko w konsoli przeglądarki (F12).
+function runTests() {
+  const res = TESTS.map(t => { try { t.fn(); return { name: t.name, ok: true }; } catch (e) { return { name: t.name, ok: false, msg: e.message }; } });
+  const bad = res.filter(r => !r.ok);
+  console.info(`Testy planera: ${res.length - bad.length} z ${res.length} OK`);
+  if (!bad.length) return res;
+  console.warn('Testy planera — NOK:', bad);
+  const bar = document.createElement('div');
+  bar.id = 'testyNok';
+  bar.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:3000;max-height:40vh;overflow:auto;border-radius:12px;padding:12px 16px;font:13px/1.5 system-ui;box-shadow:var(--cien);background:var(--blad-tlo);color:var(--blad);border:1px solid currentColor';
+  bar.innerHTML = `<b>Testy NOK: ${bad.length} z ${res.length}</b> — przyślij ten komunikat <button style="float:right" onclick="this.parentNode.remove()">✕</button>` +
+    `<ul style="margin:6px 0 0 18px">${bad.map(r => `<li>✗ ${esc(r.name)} — <b>${esc(r.msg)}</b></li>`).join('')}</ul>`;
+  document.body.appendChild(bar);
+  return res;
+}
+
+// ===== KONIEC js-testy (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06');

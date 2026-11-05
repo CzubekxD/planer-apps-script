@@ -1,0 +1,83 @@
+// js-historia — Podgląd jako (dla właściciela) i historia zmian z cofaniem
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 10b. PODGLĄD JAKO I HISTORIA ZMIAN
+// Podgląd jako (tylko właściciel): widzisz planer oczami osoby z e-mailem na karcie. W tym trybie nic się nie zapisuje.
+const Preview = { as: '' };
+function renderJako() {
+  const sel = f('jakoWybor');
+  if (!Perm.realOwner) { sel.hidden = true; return; }
+  const emails = [...new Set(AppState.tabs.flatMap(t => projectsOf(t).flatMap(p => p.editors || [])))].sort();
+  sel.innerHTML = `<option value="">Widok: właściciel</option>` +
+    emails.map(e => `<option value="${esc(e)}">Podgląd jako: ${esc(e)}</option>`).join('') +
+    `<option value="gosc@firma.pl">Podgląd jako: osoba spoza kart</option>`;
+  sel.value = [...sel.options].some(o => o.value === Preview.as) ? Preview.as : '';
+  sel.hidden = false;
+}
+function setJako(email) {
+  Preview.as = email || '';
+  Perm.user = Preview.as || Perm.realUser;
+  setReadOnly(!!Preview.as);
+  if (!Preview.as) { loaded = false; return load(renderAll); }   // wyjście z podglądu = świeży stan z Arkusza
+  renderAll();
+  statusEl.textContent = `Podgląd jako ${Preview.as} — zmiany nie są zapisywane`;
+}
+f('jakoWybor').addEventListener('change', e => setJako(e.target.value));
+
+// Historia: lista wpisów, przywracanie stanu sprzed wybranej zmiany (tylko właściciel)
+const fmtTs = ts => { const d = new Date(ts); return `${formatDate(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function drawHistory(entries) {
+  const box = f('historiaLista');
+  if (!entries.length) { box.innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Brak wpisów — dziennik zacznie się od następnego zapisu.</div><div></div></div>'; return; }
+  box.innerHTML = '';
+  [...entries].reverse().forEach((e, ri) => {
+    const i = entries.length - 1 - ri;
+    const prev = entries[i - 1];
+    const row = document.createElement('div');
+    row.className = 'hist-wpis' + (e.restore ? ' przywrocenie' : '');
+    row.innerHTML = `<div><div class="kiedy">${esc(fmtTs(e.ts))}</div><div class="kto">${esc(e.user || '—')}</div></div>
+      <ul>${e.changes.slice(0, 12).map(c => `<li>${esc(c)}</li>`).join('')}${e.changes.length > 12 ? `<li>… i ${e.changes.length - 12} więcej</li>` : ''}</ul><div></div>`;
+    if (Perm.isOwner && prev && prev.hasSnapshot !== false && !e.initial) {
+      const b = document.createElement('button');
+      b.className = 'btn btn-secondary btn-maly';
+      b.textContent = 'Cofnij do stanu sprzed';
+      b.title = `Przywróci cały plan do stanu z ${fmtTs(prev.ts)}`;
+      b.addEventListener('click', () => restoreEntry(prev, entries.length - i));
+      row.lastElementChild.appendChild(b);
+    }
+    box.appendChild(row);
+  });
+}
+function openHistory() {
+  f('historiaOpis').textContent = Perm.isOwner
+    ? 'Kto, kiedy i co zmienił — każdy zapis to osobny wpis. „Cofnij do stanu sprzed” przywraca cały plan; samo cofnięcie też trafia do dziennika, więc można je odkręcić.'
+    : 'Kto, kiedy i co zmienił. Cofać zmiany może właściciel planu.';
+  f('historiaModal').classList.add('active');
+  if (!GAS) { f('historiaLista').innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Historia działa w web appie (zapisuje ją Code.gs).</div><div></div></div>'; return; }
+  f('historiaLista').innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Wczytywanie…</div><div></div></div>';
+  GAS.withSuccessHandler(list => drawHistory(list || []))
+     .withFailureHandler(err => { f('historiaLista').innerHTML = `<div class="hist-wpis"><div></div><div>Nie udało się wczytać historii: ${esc(err.message || err)}</div><div></div></div>`; })
+     .listHistory();
+}
+function restoreEntry(entry, laterCount) {
+  if (!confirm(`Przywrócić cały plan do stanu z ${fmtTs(entry.ts)}?\n\nCofniesz ${laterCount} ${laterCount === 1 ? 'późniejszą zmianę' : 'późniejszych zmian'} (wszystkich osób). Wpisy zostają w dzienniku, więc możesz do nich wrócić.`)) return;
+  const done = (data, version) => {
+    applyData(data);
+    if (version != null) AppState.version = version;
+    serverBase = normSer(data);   // punkt odniesienia do scalania = stan po cofnięciu
+    closeHistory();
+    renderAll();
+    statusEl.textContent = `Przywrócono stan z ${fmtTs(entry.ts)}`;
+  };
+  GAS.withSuccessHandler(res => { if (res && res.data) done(res.data, res.version); else alert((res && res.error) || 'Nie udało się przywrócić.'); })
+     .withFailureHandler(err => alert('Nie udało się przywrócić: ' + (err.message || err)))
+     .restoreVersion(entry.id);
+}
+f('historiaBtn').addEventListener('click', openHistory);
+const closeHistory = () => f('historiaModal').classList.remove('active');
+f('historiaZamknij').addEventListener('click', closeHistory);
+f('historiaModal').addEventListener('mousedown', e => { if (e.target === f('historiaModal')) closeHistory(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHistory(); });
+
+// ===== KONIEC js-historia (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-historia@2026-11-06');

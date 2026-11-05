@@ -1,0 +1,303 @@
+// js-karta — Okno karty projektu: pola, metryczka, kamienie milowe, edytorzy karty, zapis karty
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności.
+
+// 7. MODAL
+const modal = f('projektModal');
+let currentEditId = null;
+
+// Podpowiedzi osób według roli: tylko ludzie, którzy już byli w tej roli (wszystkie zakładki).
+// Nowa / pusta rola → wszyscy. Kolejność: najczęściej przypisywani w tej roli na górze.
+function personsForRole(role) {
+  const rk = norm(role);
+  if (!rk) return allPersons();
+  syncTab();
+  const count = new Map();
+  AppState.tabs.forEach(t => t.projects.forEach(p => p.assignments.forEach(a => {
+    if (norm(a.role) !== rk || isNA(a.person)) return;
+    const k = norm(a.person);
+    const c = count.get(k) || { name: a.person, n: 0 };
+    c.n++; count.set(k, c);
+  })));
+  if (!count.size) return allPersons();
+  return [...count.values()].sort((x, y) => y.n - x.n || x.name.localeCompare(y.name, 'pl')).map(c => c.name);
+}
+function fillPersonHints(row) {
+  f('dlOsoby').innerHTML = personsForRole(row.querySelector('.in-rola').value).map(n => `<option value="${esc(n)}">`).join('');
+}
+function addPersonRow(group, a = {}) {
+  const list = f(`lista-${group}`);
+  const pusto = list.querySelector('.osoby-pusto');
+  if (pusto) pusto.remove();
+  const row = document.createElement('div');
+  row.className = 'osoba-wiersz';
+  row.innerHTML = `<input class="in-rola" list="dlRole" placeholder="Rola, np. Kupiec" autocomplete="off"><input class="in-osoba" list="dlOsoby" placeholder="Imię i nazwisko" autocomplete="off"><button type="button" class="usun-wiersz" title="Usuń">✕</button>`;
+  row.querySelector('.in-rola').value = a.role || '';
+  row.querySelector('.in-osoba').value = a.person || '';
+  row.querySelector('.usun-wiersz').addEventListener('click', () => { row.remove(); if (!list.children.length) markEmpty(group); });
+  // lista podpowiedzi przelicza się dla roli z tego wiersza w chwili wejścia w pole „Osoba”
+  const osoba = row.querySelector('.in-osoba');
+  osoba.addEventListener('focus', () => fillPersonHints(row));
+  row.querySelector('.in-rola').addEventListener('change', () => { if (document.activeElement === osoba) fillPersonHints(row); });
+  list.appendChild(row);
+  return row;
+}
+function markEmpty(group) {
+  const list = f(`lista-${group}`);
+  list.innerHTML = `<div class="osoby-pusto">${group === 'team' ? 'Nikt nie jest przypisany.' : 'Brak interesariuszy.'}</div>`;
+}
+function renderPersonRows(assignments) {
+  GROUPS.forEach(g => {
+    const rows = assignments.filter(a => a.group === g);
+    f(`lista-${g}`).innerHTML = '';
+    if (!rows.length) markEmpty(g); else rows.forEach(a => addPersonRow(g, a));
+  });
+}
+function readPersonRows() {
+  const out = [];
+  GROUPS.forEach(g => f(`lista-${g}`).querySelectorAll('.osoba-wiersz').forEach(r => {
+    const a = normAssign({ group: g, role: r.querySelector('.in-rola').value, person: r.querySelector('.in-osoba').value });
+    if (a) out.push(a);
+  }));
+  return out;
+}
+document.querySelectorAll('.dodaj-wiersz').forEach(btn => btn.addEventListener('click', () => {
+  addPersonRow(btn.dataset.group).querySelector('.in-rola').focus();
+}));
+
+function markKmEmpty() { f('lista-km').innerHTML = '<div class="osoby-pusto">Brak kamieni milowych.</div>'; }
+function addKmRow(m = {}) {
+  const list = f('lista-km');
+  const pusto = list.querySelector('.osoby-pusto');
+  if (pusto) pusto.remove();
+  const row = document.createElement('div');
+  row.className = 'km-wiersz';
+  row.innerHTML = `<input type="checkbox" class="km-done" title="Osiągnięty"><input type="text" class="km-nazwa" placeholder="np. Zatwierdzenie budżetu"><input type="date" class="km-data"><button type="button" class="usun-wiersz" title="Usuń">✕</button>`;
+  row.querySelector('.km-done').checked = !!m.done;
+  if (m.doneAt) row.dataset.doneAt = toLocalISO(m.doneAt);
+  row.querySelector('.km-nazwa').value = m.name || '';
+  row.querySelector('.km-data').value = m.date ? toLocalISO(m.date) : '';
+  row.querySelector('.usun-wiersz').addEventListener('click', () => { row.remove(); if (!list.children.length) markKmEmpty(); });
+  list.appendChild(row);
+  return row;
+}
+function readKmRows() {
+  return [...f('lista-km').querySelectorAll('.km-wiersz')].map(r => ({
+    name: cleanName(r.querySelector('.km-nazwa').value) || 'Kamień milowy',
+    date: fromLocalISO(r.querySelector('.km-data').value),
+    done: r.querySelector('.km-done').checked,
+    doneAt: r.querySelector('.km-done').checked ? (fromLocalISO(r.dataset.doneAt) || startOfToday()) : null
+  })).filter(m => m.date).sort((a, b) => a.date - b.date);
+}
+// Szablon kamieni wg metody — dopisuje brakujące, nie nadpisuje
+f('szablonKm').addEventListener('click', () => {
+  const p = AppState.projects.find(x => x.id === currentEditId);
+  const start = p ? p.start : tempCreateState.start, end = p ? p.end : tempCreateState.end;
+  if (!start || !end) return;
+  const dur = Math.max(1, diffDays(start, end) - 1);
+  const have = new Set([...f('lista-km').querySelectorAll('.km-nazwa')].map(i => norm(i.value)));
+  METHODS[f('m-metoda').value].km.forEach(([name, a, b]) => {
+    if (have.has(norm(name))) return;
+    const date = typeof a === 'string' ? addDays(a === 'start' ? start : addDays(end, -1), b) : addDays(start, Math.round(dur * a));
+    addKmRow({ name, date });
+  });
+});
+
+// Pola metody
+let mfDraft = {};
+function collectMethodFields() {
+  f('metodaPola').querySelectorAll('[data-mf]').forEach(el => { mfDraft[el.dataset.mf] = el.value.trim(); });
+}
+function renderMethodFields(method) {
+  const M = METHODS[method];
+  f('metodaOpis').textContent = M.opis;
+  f('metodaSekcja').textContent = M.label;
+  f('celLabel').textContent = M.goal;
+  const box = f('metodaPola');
+  box.innerHTML = '';
+  let pair = null;
+  M.fields.forEach(fd => {
+    const wrap = document.createElement('div');
+    wrap.className = 'pole-input';
+    const id = `mf-${fd.k}`;
+    let ctl;
+    if (fd.t === 'area') ctl = `<textarea id="${id}" data-mf="${fd.k}" placeholder="${esc(fd.ph || '')}"></textarea>`;
+    else if (fd.t === 'select') ctl = `<select id="${id}" data-mf="${fd.k}"><option value="">—</option>${fd.o.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
+    else ctl = `<input type="${fd.t === 'date' ? 'date' : 'text'}" id="${id}" data-mf="${fd.k}" placeholder="${esc(fd.ph || '')}">`;
+    wrap.innerHTML = `<label for="${id}">${esc(fd.l)}</label>${ctl}`;
+    const el = wrap.querySelector('[data-mf]');
+    el.value = mfDraft[fd.k] || '';
+    if (fd.t === 'area') { box.appendChild(wrap); pair = null; return; }
+    if (!pair) { pair = document.createElement('div'); pair.className = 'm-dwa'; box.appendChild(pair); pair.appendChild(wrap); }
+    else { pair.appendChild(wrap); pair = null; }
+  });
+}
+f('m-metoda').innerHTML = METHOD_KEYS.map(k => `<option value="${k}">${esc(METHODS[k].label)}</option>`).join('');
+f('m-metoda').addEventListener('change', e => { collectMethodFields(); renderMethodFields(e.target.value); });
+f('dodajKm').addEventListener('click', () => addKmRow().querySelector('.km-nazwa').focus());
+
+function renderBaselineInfo(p) {
+  const box = f('baselineInfo');
+  if (!p || p.status !== 'ongoing' || !p.baselineStart) { box.hidden = true; return; }
+  box.hidden = false;
+  const d = delayDays(p);
+  const plan = `${formatDate(p.baselineStart)} – ${formatDate(addDays(p.baselineEnd, -1))}`;
+  const teraz = `${formatDate(p.start)} – ${formatDate(addDays(p.end, -1))}`;
+  f('baselineTekst').innerHTML =
+    `<div><b>Plan pierwotny:</b> ${plan}</div><div><b>Obecnie:</b> ${teraz}</div>` +
+    (d > 0 ? `<div class="opoz">Opóźnienie: +${d} dni</div>` : d < 0 ? `<div class="ok">Przed planem o ${-d} dni</div>` : `<div class="ok">Zgodnie z planem</div>`);
+  f('rebaselineBtn').hidden = d === 0 && diffDays(p.baselineStart, p.start) === 0;
+}
+
+f('rebaselineBtn').addEventListener('click', () => {
+  const p = AppState.projects.find(x => x.id === currentEditId);
+  if (!p) return;
+  if (!confirm('Przyjąć obecne daty jako nowy plan? Opóźnienie zostanie wyzerowane.')) return;
+  p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end);
+  renderBaselineInfo(p);
+  renderAll();
+});
+
+// Etykieta trybu nad kartą (dla nie-właściciela: „Możesz edytować” / „Tylko podgląd”)
+function openModalModeLabel() {
+  const p = AppState.projects.find(x => x.id === currentEditId);
+  const editable = p ? canEditCard(p) : Perm.isOwner;
+  const tryb = f('modalTryb');
+  tryb.hidden = Perm.isOwner;
+  tryb.className = 'modal-tryb ' + (editable ? 'edycja' : 'podglad');
+  tryb.textContent = editable ? '✎ Możesz edytować tę kartę' : 'Tylko podgląd — poproś właściciela planu o dopisanie Twojego e-maila';
+}
+function openModal(project = null) {
+  f('modalTitle').textContent = project ? 'Edytuj Projekt' : 'Nowy Projekt';
+  f('projTytul').value = project ? project.title : '';
+  // Daty: koniec w polu jest WŁĄCZNIE (ostatni dzień projektu), w danych wyłącznie (+1 dzień)
+  const ds = project ? project.start : tempCreateState.start, de = project ? project.end : tempCreateState.end;
+  f('projStart').value = ds ? toLocalISO(ds) : '';
+  f('projKoniec').value = de ? toLocalISO(addDays(de, -1)) : '';
+  f('datyBlad').hidden = true;
+  META_KEYS.forEach(k => { document.querySelector(`.metryczka [data-key="${k}"]`).value = project ? project[k] || '' : ''; });
+  document.querySelectorAll('input[name="rag"]').forEach(r => { r.checked = !!project && r.value === project.rag; });
+  f('projNotatki').value = project ? project.notes || '' : '';
+  document.querySelector(`input[name="projStatus"][value="${project ? project.status : 'planned'}"]`).checked = true;
+
+  f('dlRole').innerHTML = allRoles().map(r => `<option value="${esc(r.name)}">`).join('');
+  f('dlOsoby').innerHTML = allPersons().map(n => `<option value="${esc(n)}">`).join('');
+
+  let assignments = [];
+  if (project) assignments = project.assignments;
+  else if (tempCreateState.person && AppState.viewRole && AppState.viewRole !== ALL_VIEW) {
+    assignments = [{ group: roleGroup(AppState.viewRole), role: AppState.viewRole, person: tempCreateState.person }];
+  }
+  renderPersonRows(assignments);
+  mfDraft = project ? { ...project.mf } : {};
+  const meth = project ? methodOf(project) : (localStorage.getItem('planer.metoda') || 'klasyczna');
+  f('m-metoda').value = METHODS[meth] ? meth : 'klasyczna';
+  renderMethodFields(f('m-metoda').value);
+  const hist = project ? [project.startedAt && `start ${formatDate(project.startedAt)}`, project.doneAt && `zamknięty ${formatDate(project.doneAt)}`].filter(Boolean) : [];
+  f('statusHist').textContent = 'Przełączenie na „W trakcie” zamraża obecne daty jako plan pierwotny.' + (hist.length ? ` Zapisane: ${hist.join(' · ')}.` : '');
+  f('lista-km').innerHTML = '';
+  const kms = project ? project.milestones : [];
+  if (kms.length) kms.forEach(addKmRow); else markKmEmpty();
+
+  currentEditId = project ? project.id : null;
+  // Uprawnienia w oknie: pola zablokowane, jeśli nie możesz edytować tej karty
+  const editable = project ? canEditCard(project) : Perm.isOwner;
+  modal.classList.toggle('bez-edycji', !editable);
+  modal.querySelectorAll('.modal-karta input, .modal-karta select, .modal-karta textarea').forEach(el => { el.disabled = !editable; });
+  f('projEdytorzy').value = project ? (project.editors || []).join(', ') : '';
+  f('projEdytorzy').disabled = !Perm.isOwner;
+  f('edytorzyPodp').textContent = Perm.isOwner
+    ? 'Puste = tylko Ty. Wpisane osoby zmienią tę kartę (daty, status, metryczkę), ale nie usuną jej i nie dopiszą innych.'
+    : 'Listę edytorów zmienia tylko właściciel planu.';
+  const tryb = f('modalTryb');
+  tryb.hidden = Perm.isOwner;
+  tryb.className = 'modal-tryb ' + (editable ? 'edycja' : 'podglad');
+  tryb.textContent = editable ? '✎ Możesz edytować tę kartę' : 'Tylko podgląd — poproś właściciela planu o dopisanie Twojego e-maila';
+  renderBaselineInfo(project);
+  hideTooltip();
+  modal.classList.add('active');
+  if (editable) setTimeout(() => f('projTytul').focus(), 0);
+  modalEditable = editable;
+  modalSnapshot = modalState();
+}
+// Ochrona przed utratą notatek: okno zamyka się tylko przyciskiem (Zapisz / Anuluj) albo Esc,
+// a przy niezapisanych zmianach pyta. Kliknięcie obok okna niczego nie zamyka.
+let modalSnapshot = '', modalEditable = false;
+const modalState = () => JSON.stringify([...modal.querySelectorAll('.modal-karta input, .modal-karta select, .modal-karta textarea')]
+  .map(el => (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value));
+const modalDirty = () => modal.classList.contains('active') && modalEditable && modalState() !== modalSnapshot;
+function closeModal() { modal.classList.remove('active'); currentEditId = null; modalSnapshot = ''; }
+function tryCloseModal() {
+  if (modalDirty() && !confirm('Masz niezapisane zmiany w tej karcie.\n\nZamknąć bez zapisywania?')) return;
+  closeModal();
+}
+f('anulujBtn').addEventListener('click', tryCloseModal);
+window.addEventListener('beforeunload', e => { if (modalDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+f('dodajBtn').addEventListener('click', () => {
+  const data = {
+    title: f('projTytul').value.trim() || 'Bez tytułu',
+    ...Object.fromEntries(META_KEYS.map(k => [k, document.querySelector(`.metryczka [data-key="${k}"]`).value.trim()])),
+    rag: (document.querySelector('input[name="rag"]:checked') || {}).value || '',
+    notes: f('projNotatki').value.trim(),
+    status: document.querySelector('input[name="projStatus"]:checked').value,
+    assignments: readPersonRows(),
+    milestones: readKmRows(),
+    method: f('m-metoda').value
+  };
+  const dStart = fromLocalISO(f('projStart').value), dEndIncl = fromLocalISO(f('projKoniec').value);
+  const blad = !dStart || !dEndIncl ? 'Podaj datę startu i końca.' : dEndIncl < dStart ? 'Koniec nie może być przed startem.' : '';
+  if (blad) { f('datyBlad').textContent = blad; f('datyBlad').hidden = false; f(!dStart ? 'projStart' : 'projKoniec').focus(); return; }
+  data.start = dStart; data.end = addDays(dEndIncl, 1);
+  collectMethodFields();
+  data.mf = { ...mfDraft };
+  try { localStorage.setItem('planer.metoda', data.method); } catch (e) {}
+
+  let p = AppState.projects.find(x => x.id === currentEditId);
+  if (p ? !canEditCard(p) : !Perm.isOwner) { closeModal(); return; }
+  data.editors = Perm.isOwner ? parseEmails(f('projEdytorzy').value) : (p ? p.editors : []);
+  const prevStatus = p ? p.status : null;
+  const wasOngoing = !!p && p.status !== 'planned';
+  if (p) Object.assign(p, data);
+  else {
+    p = { id: AppState.generateId(), ...data, baselineStart: null, baselineEnd: null, startedAt: null, doneAt: null, history: [] };
+    AppState.projects.push(p);
+  }
+  // Znaczniki czasu zmian statusu — surowe dane do miar przepływu
+  const today = startOfToday();
+  if (p.status !== prevStatus) {
+    p.history.push({ date: toLocalISO(today), status: p.status });
+    if (p.status === 'ongoing' && !p.startedAt) p.startedAt = today;
+    if (p.status === 'done') { if (!p.startedAt) p.startedAt = new Date(p.start); p.doneAt = today; }
+    if (p.status !== 'done') p.doneAt = null;
+    if (p.status === 'planned') p.startedAt = null;
+  }
+  // Plan pierwotny zamraża się w chwili przejścia na „W trakcie”
+  if (p.status !== 'planned' && (!wasOngoing || !p.baselineStart)) { p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end); }
+  if (p.status === 'planned') { p.baselineStart = null; p.baselineEnd = null; }
+
+  closeModal();
+  renderAll();
+});
+
+// Kliknięcie w tło: bez zmian w karcie → zamyka; ze zmianami → blokuje (okno drgnie + podpowiedź).
+// Liczy się tylko kliknięcie zaczęte I skończone na tle — zaznaczanie tekstu w polu, które wyjedzie poza okno, nie zamyka karty.
+let tloDown = false;
+modal.addEventListener('mousedown', e => { tloDown = e.target === modal; });
+modal.addEventListener('mouseup', e => {
+  if (!tloDown || e.target !== modal) return;
+  tloDown = false;
+  if (!modalDirty()) return closeModal();
+  const k = modal.querySelector('.modal-karta');
+  k.classList.remove('drgnij'); void k.offsetWidth; k.classList.add('drgnij');
+  const tryb = f('modalTryb');
+  tryb.hidden = false; tryb.className = 'modal-tryb podglad'; tryb.textContent = 'Masz niezapisane zmiany: Zapisz albo Anuluj';
+  clearTimeout(tryb._t); tryb._t = setTimeout(() => { if (Perm.isOwner) tryb.hidden = true; else openModalModeLabel(); }, 3000);
+});
+document.addEventListener('keydown', e => {
+  if (!modal.classList.contains('active')) return;
+  if (e.key === 'Escape') tryCloseModal();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!f('dodajBtn').hidden && getComputedStyle(f('dodajBtn')).display !== 'none') f('dodajBtn').click(); }   // Ctrl+S = Zapisz
+});
+
+// ===== KONIEC js-karta (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-karta@2026-11-06');
