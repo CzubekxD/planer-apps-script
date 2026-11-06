@@ -122,6 +122,16 @@ const smRows = rows => rows.filter(r => r.planned + r.ongoing + r.done).map(r =>
 test('miary: 15 miesięcy, od grudnia rok temu do lutego, trzy ostatnie to przyszłość', () => { const r = statusByMonth(SM_PORTFEL, D(2026, 11, 15)); eq([r.length, L.toISO(r[0].from), L.toISO(r[14].from), r.map(x => x.future).join('').replace(/false/g, '-').replace(/true/g, '+')], [15, '2025-12-01', '2027-02-01', '------------+++']); });
 test('miary: planowany → w trakcie → zakończony, miesiąc po miesiącu', () => eq(smRows(statusByMonth(SM_PORTFEL, D(2026, 11, 15))), [
   '2026-08 P1 T0 Z0', '2026-09 P0 T1 Z0', '2026-10 P0 T1 Z1', '2026-11 P2 T1 Z0', '2026-12* P1 T2 Z0', '2027-01* P1 T0 Z2', '2027-02* P1 T0 Z0']));
+test('miary: w trakcie po terminie z karty zostaje „w trakcie” także w przyszłych miesiącach', () => eq(smRows(statusByMonth([
+  SM('ongoing', { start: '2026-09-01', end: '2026-11-01', startedAt: '2026-09-01', history: [{ date: '2026-09-01', status: 'ongoing' }] })], D(2026, 11, 15))),
+  ['2026-09 P0 T1 Z0', '2026-10 P0 T1 Z0', '2026-11 P0 T1 Z0', '2026-12* P0 T1 Z0', '2027-01* P0 T1 Z0', '2027-02* P0 T1 Z0']));
+test('miary: planowany ze startem w przeszłości zostaje „planowany” do zobowiązania', () => eq(smRows(statusByMonth([
+  SM('planned', { start: '2026-10-01', end: '2026-12-01', history: [{ date: '2026-09-20', status: 'planned' }] })], D(2026, 11, 15))),
+  ['2026-09 P1 T0 Z0', '2026-10 P1 T0 Z0', '2026-11 P1 T0 Z0', '2026-12* P1 T0 Z0', '2027-01* P1 T0 Z0', '2027-02* P1 T0 Z0']));
+test('miary: zakończenie 1. i ostatniego dnia miesiąca liczy się w tym miesiącu', () => eq(smRows(statusByMonth([
+  SM('done', { start: '2026-05-31', end: '2026-06-02', startedAt: '2026-05-31', doneAt: '2026-06-01', history: [{ date: '2026-05-31', status: 'ongoing' }] }),
+  SM('done', { start: '2026-07-01', end: '2026-08-01', startedAt: '2026-07-01', doneAt: '2026-07-31', history: [{ date: '2026-07-01', status: 'ongoing' }] })], D(2026, 11, 15))),
+  ['2026-05 P0 T1 Z0', '2026-06 P0 T0 Z1', '2026-07 P0 T0 Z1']));
 test('miary: pusty portfel = same zera', () => eq(smRows(statusByMonth([], D(2026, 11, 15))), []));
 
 // --- scalanie przy konflikcie zapisu (dwie osoby / dwie karty naraz) ---

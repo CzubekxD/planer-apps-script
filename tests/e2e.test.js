@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 63, `testów: ${res.length}`);   // stan na paczkę 06b: 63
+  assert.ok(res.length >= 66, `testów: ${res.length}`);   // stan na paczkę 06b: 66
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);
@@ -144,7 +144,8 @@ test('podwójne kliknięcie kafla (z drgnięciem myszy do 6 px) otwiera kartę',
 
 test('Miary: wykres wg statusu w miesiącach, przełącznik stan / przepływ zapamiętany po odświeżeniu', async () => {
   const gas = createGas();
-  const iso = d => d.toISOString().slice(0, 10), day = n => iso(new Date(Date.now() + n * 864e5));
+  const pad = n => String(n).padStart(2, '0'), iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // data lokalna, nie UTC
+  const day = n => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n); return iso(d); };
   seed(gas, proj('a', 'W trakcie', { status: 'ongoing', start: day(-40), end: day(30), startedAt: day(-40), baselineStart: day(-40), baselineEnd: day(30) }),
     proj('b', 'Planowany', { start: day(60), end: day(90), history: [{ date: day(-10), status: 'planned' }] }));
   const page = await openPlaner(gas);

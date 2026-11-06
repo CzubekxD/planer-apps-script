@@ -32,8 +32,8 @@ function metrics() {
     const w50 = pctl(hits[i], .5), w85 = pctl(hits[i], .85);
     return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: addDays(p.end, -1), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(diffDays(p.start, p.end) * R.r85)) : null };
   });
-  const wipNow = active.length + all.filter(p => p.status === 'ongoing' && !p.startedAt).length;
-  return { today, done, lts, P, active, stMonths, months, tp, ratios, onTime, R, mc, wipNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
+  const inProgressNow = active.length + all.filter(p => p.status === 'ongoing' && !p.startedAt).length;
+  return { today, done, lts, P, active, stMonths, months, tp, ratios, onTime, R, mc, inProgressNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
 }
 
 // Projekty wg statusu w miesiącach: 12 wstecz (z bieżącym) + 3 do przodu.
@@ -45,7 +45,7 @@ function statusByMonth(projects, today) {
     const from = new Date(today.getFullYear(), today.getMonth() + i, 1), to = new Date(today.getFullYear(), today.getMonth() + i + 1, 1);
     const row = { from, future: i > 0, planned: 0, ongoing: 0, done: 0 };
     projects.filter(hasDates).forEach(p => {
-      const st = i > 0 ? forecastStatus(p, from, to) : actualStatus(p, from, i === 0 ? addDays(today, 1) : to, i === 0);
+      const st = i > 0 ? forecastStatus(p, from, to, today) : actualStatus(p, from, i === 0 ? addDays(today, 1) : to, i === 0);
       if (st) row[st]++;
     });
     rows.push(row);
@@ -62,8 +62,11 @@ function actualStatus(p, from, cut, isNow) {
   const created = dates.length ? new Date(Math.min(...dates)) : null;
   return (created ? created < cut : isNow) ? 'planned' : null;   // bez historii nie wiemy, od kiedy istnieje — liczymy tylko bieżący miesiąc
 }
-function forecastStatus(p, from, to) {
+// Przyszły miesiąc wg terminu z karty. Termin, który już minął, nie zmienia stanu: w trakcie zostaje w trakcie, planowany planowanym (do zobowiązania)
+function forecastStatus(p, from, to, today) {
   if (p.status === 'done') return null;
+  if (p.status === 'ongoing' && p.end <= today) return 'ongoing';
+  if (p.status === 'planned' && p.start < today) return 'planned';
   const last = addDays(p.end, -1);
   if (last >= from && last < to) return 'done';
   if (p.start < to && p.end > from) return 'ongoing';
@@ -76,7 +79,9 @@ const W = 640;
 let stWykres = 'stan';
 try { if (localStorage.getItem('planer.miary.status') === 'przeplyw') stWykres = 'przeplyw'; } catch (e) {}
 function setStWykres(k) { stWykres = k; try { localStorage.setItem('planer.miary.status', k); } catch (e) {} renderMiary(); }
-function svgStatus(rows, mode, { h = 240, W = 1200 } = {}) {   // szeroka karta: własna szerokość, żeby napisy nie puchły
+const ST_W = 1200, ST_H = 240;   // szeroka karta: własna szerokość viewBox, żeby napisy nie puchły
+function svgStatus(rows, mode, today) {
+  const W = ST_W, h = ST_H;
   const pad = { l: 30, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b, n = rows.length, slot = w / n;
   let cum = 0;
   const layers = rows.map(r => { cum += r.done; const z = mode === 'przeplyw' ? cum : r.done; return [z, z + r.ongoing, z + r.ongoing + r.planned]; });
@@ -101,8 +106,9 @@ function svgStatus(rows, mode, { h = 240, W = 1200 } = {}) {   // szeroka karta:
       if (b > a) s += `<rect class="st-seg ${cls[k]}${r.future ? ' przysz' : ''}" x="${X(i) + (slot - bw) / 2}" y="${Y(b)}" width="${bw}" height="${Y(a) - Y(b)}"><title>${mies(r.from)}: ${b - a} ${nazwy[k]}</title></rect>`;
     }));
   }
-  const nowI = rows.findIndex(r => r.future);
-  if (nowI > 0) s += `<line class="st-dzis" x1="${X(nowI)}" x2="${X(nowI)}" y1="${pad.t}" y2="${pad.t + hh}"/>`;
+  const nowI = rows.findIndex(r => r.future) - 1;   // bieżący miesiąc; linia „dziś” w jego dniu
+  if (nowI >= 0) { const dni = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate(), x = X(nowI) + slot * (today.getDate() - 0.5) / dni;
+    s += `<line class="st-dzis" x1="${x}" x2="${x}" y1="${pad.t}" y2="${pad.t + hh}"><title>dziś</title></line>`; }
   rows.forEach((r, i) => { const m = r.from.getMonth(); s += `<text x="${X(i) + slot / 2}" y="${h - 6}" text-anchor="middle">${MONTH_NAMES[m]}${m === 0 || i === 0 ? ` '${String(r.from.getFullYear()).slice(-2)}` : ''}</text>`; });
   return s + `<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/></svg>`;
 }
@@ -136,7 +142,7 @@ function svgScatter(done, P, { h = 220 } = {}) {
   const X = t => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * w, Y = v => pad.t + hh - (v / maxY) * hh;
   const s = [`<svg class="mi" viewBox="0 0 ${W} ${h}">`];
   [['p50', 'LT50'], ['p85', 'LT85'], ['p95', 'LT95']].forEach(([k, n]) => { if (P[k] == null) return; s.push(`<line class="${k}" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(P[k])}" y2="${Y(P[k])}"/><text class="lbl-${k}" x="${W - pad.r}" y="${Y(P[k]) - 4}" text-anchor="end">${n} ${P[k]} d</text>`); });
-  done.forEach(x => s.push(`<circle class="pkt ${x.lt > P.p85 ? 'zly' : ''}" cx="${X(+x.p.doneAt)}" cy="${Y(x.lt)}" r="5"><title>${esc(x.p.title)} — ${x.lt} dni, zamknięty ${formatDate(x.p.doneAt)}</title></circle>`));
+  done.forEach(x => s.push(`<circle class="pkt ${x.lt > P.p85 ? 'zly' : ''}" cx="${X(+x.p.doneAt)}" cy="${Y(x.lt)}" r="5"><title>${esc(x.p.title)} — ${x.lt} dni, zakończony ${formatDate(x.p.doneAt)}</title></circle>`));
   for (let i = 0; i <= 4; i++) { const t = t0 + (t1 - t0) * i / 4; s.push(`<text x="${X(t)}" y="${h - 6}" text-anchor="middle">${mies(new Date(t))}</text>`); }
   s.push(`<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/><text x="${pad.l - 6}" y="${pad.t + 10}" text-anchor="end">dni</text></svg>`);
   return s.join('');
@@ -157,7 +163,7 @@ const fmtX = v => v == null ? '—' : `×${v.toFixed(2).replace('.', ',')}`;
 
 function svgSlip(done, R, { h = 200 } = {}) {
   const pts = done.filter(x => x.plan > 0).map(x => ({ x, r: x.lt / x.plan }));
-  if (!pts.length) return '<div class="pusto">Brak zamkniętych projektów z planem pierwotnym.</div>';
+  if (!pts.length) return '<div class="pusto">Brak zakończonych projektów z planem pierwotnym.</div>';
   const pad = { l: 26, r: 10, t: 10, b: 24 }, w = W - pad.l - pad.r, hh = h - pad.t - pad.b;
   const bin = 0.25, maxR = Math.max(2, ...pts.map(p => p.r)), nb = Math.ceil(maxR / bin) + 1, cnt = Array(nb).fill(0);
   pts.forEach(p => cnt[Math.min(nb - 1, Math.floor(p.r / bin))]++);
@@ -181,23 +187,23 @@ function pulpit(m) {
   return `<p class="mi-uwaga">Liczone z zakładki „${esc((curTab() || {}).title || '')}”: ${m.done.length} zakończonych, ${m.active.length} w trakcie, ${m.mc.length} planowanych.</p>
   <div class="mi-kpi">
     <div><b>${m.P.p85 ?? '—'} d</b><span>LT85 — 85% projektów kończy się w tylu dniach</span></div>
-    <div><b>${m.wipNow}</b><span>Projekty w toku</span></div>
+    <div><b>${m.inProgressNow}</b><span>Projekty w toku</span></div>
     <div class="${stuck ? 'al' : ''}"><b>${stuck}</b><span>Starsze niż LT85</span></div>
     <div><b>${m.tpMean.toFixed(1).replace('.', ',')}</b><span>Przepustowość / tydz. (26 tyg.)</span></div>
-    <div class="${m.onTime != null && m.onTime < .5 ? 'al' : ''}"><b>${fmtPct(m.onTime)}</b><span>Zamknięte w planie</span></div>
+    <div class="${m.onTime != null && m.onTime < .5 ? 'al' : ''}"><b>${fmtPct(m.onTime)}</b><span>Zakończone w planie</span></div>
     <div><b>${fmtX(m.R.r85)}</b><span>Poślizg P85: faktyczny / planowany</span></div>
   </div>
   <div class="mi-grid">
     <div class="mi-karta szer"><h3>Wiek projektów w trakcie</h3><div class="pod">Pas: zielony do LT50, żółty do LT85, czerwony powyżej. Czerwony słupek = projekt utknął.</div>${malo(m.done.length)}${ageRows(m.active, m.P)}</div>
     <div class="mi-karta szer mi-status"><div class="st-naglowek"><div><h3>Projekty wg statusu w miesiącach</h3><div class="pod">${stWykres === 'przeplyw' ? 'Przepływ: zakończone narastająco, nad nimi w trakcie i planowane. Grubość niebieskiego pasa = projekty w toku.' : 'Stan w miesiącu: ile projektów było planowanych (na koniec miesiąca), w trakcie i zakończonych.'} 12 miesięcy wstecz i 3 do przodu wg terminów z kart (jaśniej).</div></div>
-      <div class="widok-przel">${[['stan', 'Stan w miesiącu'], ['przeplyw', 'Przepływ']].map(([k, l]) => `<button type="button" class="btn btn-secondary btn-maly${stWykres === k ? ' on' : ''}" aria-pressed="${stWykres === k}" onclick="setStWykres('${k}')">${l}</button>`).join('')}</div></div>
+      <div class="widok-przel st-przel">${[['stan', 'Stan w miesiącu'], ['przeplyw', 'Przepływ']].map(([k, l]) => `<button type="button" class="btn btn-secondary btn-maly${stWykres === k ? ' on' : ''}" aria-pressed="${stWykres === k}" onclick="setStWykres('${k}')">${l}</button>`).join('')}</div></div>
       <div class="st-legenda"><span><i class="st-zak"></i>Zakończone</span><span><i class="st-trwa"></i>W trakcie</span><span><i class="st-plan"></i>Planowane</span></div>
-      ${svgStatus(m.stMonths, stWykres)}</div>
-    <div class="mi-karta"><h3>Przepustowość miesięczna</h3><div class="pod">Projekty zamknięte w miesiącu</div>${svgBars(m.months.map(x => x.n), m.months.map(x => x.label.split(' ')[0]))}</div>
-    <div class="mi-karta"><h3>Histogram czasu realizacji</h3><div class="pod">Start faktyczny → zamknięcie, koszyki po 15 dni</div>${malo(m.done.length)}${svgHist(m.lts, m.P)}</div>
-    <div class="mi-karta"><h3>Scatterplot czasu realizacji</h3><div class="pod">Każda kropka to zamknięty projekt; czerwone powyżej LT85</div>${svgScatter(m.done, m.P)}</div>
-    <div class="mi-karta"><h3>Poślizg — faktyczny / planowany czas trwania</h3><div class="pod">Zamknięte projekty z planem pierwotnym. Na prawo od „plan ×1” = trwało dłużej niż plan. P85 to mnożnik do nowych planów.</div>${malo(m.done.filter(x => x.plan > 0).length)}${svgSlip(m.done, m.R)}</div>
-    <div class="mi-karta"><h3>Gdzie poślizg był największy</h3><div class="pod">Top 5 zamkniętych projektów wg mnożnika faktyczny / planowany</div>${slipList(m.done) || '<div class="pusto">Brak danych.</div>'}</div>
+      ${svgStatus(m.stMonths, stWykres, m.today)}</div>
+    <div class="mi-karta"><h3>Przepustowość miesięczna</h3><div class="pod">Projekty zakończone w miesiącu</div>${svgBars(m.months.map(x => x.n), m.months.map(x => x.label.split(' ')[0]))}</div>
+    <div class="mi-karta"><h3>Histogram czasu realizacji</h3><div class="pod">Zobowiązanie → zakończenie, koszyki po 15 dni</div>${malo(m.done.length)}${svgHist(m.lts, m.P)}</div>
+    <div class="mi-karta"><h3>Scatterplot czasu realizacji</h3><div class="pod">Każda kropka to zakończony projekt; czerwone powyżej LT85</div>${svgScatter(m.done, m.P)}</div>
+    <div class="mi-karta"><h3>Poślizg — faktyczny / planowany czas trwania</h3><div class="pod">Zakończone projekty z planem pierwotnym. Na prawo od „plan ×1” = trwało dłużej niż plan. P85 to mnożnik do nowych planów.</div>${malo(m.done.filter(x => x.plan > 0).length)}${svgSlip(m.done, m.R)}</div>
+    <div class="mi-karta"><h3>Gdzie poślizg był największy</h3><div class="pod">Top 5 zakończonych projektów wg mnożnika faktyczny / planowany</div>${slipList(m.done) || '<div class="pusto">Brak danych.</div>'}</div>
     <div class="mi-karta szer"><h3>Prognoza Monte Carlo — planowane projekty</h3><div class="pod">2000 symulacji z przepustowości tygodniowej ostatnich 26 tygodni, w kolejności startu. „Plan × poślizg P85” = koniec, jeśli projekt poślizgnie się jak 85% dotychczasowych. Pasek: okno P50–P85 vs plan (┆).</div>${malo(m.done.length)}${mcTable(m, true)}</div>
   </div>`;
 }
@@ -213,10 +219,10 @@ function mcTable(m, cut) {
     const okno = cut ? `<td><div class="okno">${x.d50 && x.d85 ? `<i style="left:${pos(x.d50)};width:calc(${pos(x.d85)} - ${pos(x.d50)})"></i>` : ''}<s style="left:${pos(x.target)}" title="plan"></s></div></td>` : '';
     return `<tr class="${cls}"><td>${i + 1}</td><td><b>${esc(x.p.title)}</b></td><td>${formatDate(x.target)}</td><td>${formatDate(x.d50)}</td><td><b>${formatDate(x.d85)}</b></td><td>${formatDate(x.rcf)}</td>${okno}<td>${tag}</td></tr>`;
   }).join('');
-  return `<div class="cut tabw"><table><thead><tr><th>#</th><th>Projekt</th><th>Plan końca</th><th>P50</th><th>P85</th><th title="Plan × poślizg P85 z historii zamkniętych">Plan × poślizg P85</th>${cut ? '<th>Okno P50–P85 vs plan ┆</th>' : ''}<th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="cut tabw"><table><thead><tr><th>#</th><th>Projekt</th><th>Plan końca</th><th>P50</th><th>P85</th><th title="Plan × poślizg P85 z historii zakończonych">Plan × poślizg P85</th>${cut ? '<th>Okno P50–P85 vs plan ┆</th>' : ''}<th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-const malo = n => n < 10 ? `<div class="mi-malo">Mało danych: ${n} zamkniętych projektów. Percentyle i prognozy stają się wiarygodne od ok. 10.</div>` : '';
+const malo = n => n < 10 ? `<div class="mi-malo">Mało danych: ${n} zakończonych projektów. Percentyle i prognozy stają się wiarygodne od ok. 10.</div>` : '';
 // ---------- widok Oś czasu / Miary ----------
 let widok = 'os';
 try { if (localStorage.getItem('planer.widok2') === 'miary') widok = 'miary'; } catch (e) {}
@@ -224,11 +230,11 @@ function renderMiary() { if (widok === 'miary') f('miaryRoot').innerHTML = pulpi
 function applyWidok() {
   document.querySelector('main.container').hidden = widok !== 'os';
   f('miaryRoot').hidden = widok !== 'miary';
-  document.querySelectorAll('.widok-przel .btn').forEach(b => { b.classList.toggle('on', b.dataset.view === widok); b.setAttribute('aria-pressed', b.dataset.view === widok); });
+  document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => { b.classList.toggle('on', b.dataset.view === widok); b.setAttribute('aria-pressed', b.dataset.view === widok); });
   try { localStorage.setItem('planer.widok2', widok); } catch (e) {}
   renderMiary();
 }
-document.querySelectorAll('.widok-przel .btn').forEach(b => b.addEventListener('click', () => { widok = b.dataset.view; applyWidok(); }));
+document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => b.addEventListener('click', () => { widok = b.dataset.view; applyWidok(); }));
 
 // START
 applyWidok();

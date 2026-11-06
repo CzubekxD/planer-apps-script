@@ -35,7 +35,7 @@ Użytkownicy: właściciel planu (Mati) edytuje wszystko; koledzy z firmy ogląd
 - Panel portfela: KPI, heatmapa obciążenia osób w miesiącach (Zespół), limit WIP, decyzje do podjęcia.
 - Obeya review (A3): podsumowanie do przeglądu.
 - Widok Miary: lead time (P50/P85/P95), wiek projektów w trakcie, projekty w toku, przepustowość, terminowość, prognoza Monte Carlo dla planowanych projektów. Poniżej 10 zakończonych projektów pokazuje „Mało danych”.
-- **[Z-15]** Wykres „Projekty wg statusu w miesiącach”: 12 miesięcy wstecz (z bieżącym) + 3 do przodu, przełącznik **Stan w miesiącu** (słupki piętrowe, domyślnie) / **Przepływ** (diagram skumulowanego przepływu), wybór zapamiętany w przeglądarce. W miesiącu projekt ma jeden stan: zakończony (faktyczna data zakończenia w tym miesiącu) > w trakcie (po zobowiązaniu, przed zakończeniem) > planowany (na koniec miesiąca; od pierwszego wpisu w historii statusów, a bez historii tylko w bieżącym miesiącu). Przyszłe miesiące liczą się z terminów na kartach. Słowo „WIP” w Miarach nie występuje (limit WIP dotyczy osoby).
+- **[Z-15]** Wykres „Projekty wg statusu w miesiącach”: 12 miesięcy wstecz (z bieżącym) + 3 do przodu, przełącznik **Stan w miesiącu** (słupki piętrowe, domyślnie) / **Przepływ** (diagram skumulowanego przepływu), wybór zapamiętany w przeglądarce. W miesiącu projekt ma jeden stan: zakończony (faktyczna data zakończenia w tym miesiącu) > w trakcie (po zobowiązaniu, przed zakończeniem) > planowany (na koniec miesiąca; od pierwszego wpisu w historii statusów, a bez historii tylko w bieżącym miesiącu). Przyszłe miesiące liczą się z terminów na kartach; termin, który już minął, nie zmienia stanu (w trakcie zostaje w trakcie, planowany planowanym). Linia „dziś” stoi w dzisiejszym dniu bieżącego miesiąca. Słowo „WIP” w Miarach nie występuje (limit WIP dotyczy osoby).
 - Eksport / Import planu jako JSON.
 
 ### 2.4 Historia zmian
@@ -131,7 +131,7 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 - **[Z-12]** Każdy `js-*` (poza js-start) kończy się linią `// ===== KONIEC <plik> (wersja X)` i `window.__planerParts.push('<plik>@X')`. Mapa `PLANER_FILES` w js-start zawiera dokładnie te wersje. `CODE_VERSION` = `PLAN_LIB_VERSION` = `PLANER_VERSION`. Plik ucięty przy wklejaniu albo w starej wersji → czerwony pasek z nazwą pliku.
 - Łapacz błędów w Index zamiast pustej strony pokazuje komunikat z listą plików, które wczytały się do końca.
 - Aktualizacja wyłącznie przez **Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa wersja → Wdróż**. „Nowe wdrożenie” zmienia adres. Adres `/dev` pokazuje ostatnio zapisany kod, ale pisze do **tego samego** Arkusza.
-- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 63) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
+- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 66) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
 
 ## 8. Czego świadomie nie ma
 - Jeden Index zamiast plików: temat zamknięty, zostaje podział na pliki.

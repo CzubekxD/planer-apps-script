@@ -202,12 +202,11 @@ const axisNow = () => ({ origin: AppState.globalStartDate, pxPerDay: pxPerDay(),
 const dateToPx = (date) => DATE_LIB.toPx(date, axisNow());
 const pxToDate = (px) => DATE_LIB.fromPx(px, axisNow());
 
-// Opóźnienie tylko dla projektów w trakcie (planowane nie mają planu pierwotnego)
-// Opóźnienie wobec planu pierwotnego; zakończony liczy się od faktycznej daty zakończenia (koniec w danych jest wyłączny)
+// Opóźnienie wobec planu pierwotnego (planowany go nie ma); zakończony liczy się od faktycznej daty zakończenia (koniec w danych jest wyłączny)
 const actualEnd = p => (p.status === 'done' && p.doneAt) ? addDays(p.doneAt, 1) : p.end;
 const delayDays = p => (p.status !== 'planned' && p.baselineEnd && actualEnd(p)) ? diffDays(p.baselineEnd, actualEnd(p)) : 0;
-// Koniec efektywny: dla zakończonych data zamknięcia (do obciążenia i przepływu)
-const effEnd = p => (p.status === 'done' && p.doneAt) ? new Date(Math.min(p.end, addDays(p.doneAt, 1))) : p.end;
+// Koniec efektywny do obciążenia: faktyczny koniec, ale nie później niż termin z karty
+const effEnd = p => new Date(Math.min(p.end, actualEnd(p)));
 const viewEnd = () => new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + AppState.horizonMonths, 1);
 const trackWidth = () => dateToPx(viewEnd());
 // Domyślna szerokość klocka po pojedynczym kliknięciu (bez przeciągania)

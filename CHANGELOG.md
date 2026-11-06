@@ -6,7 +6,7 @@ Aktualna paczka: **2026-11-06b**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
-| 06.11 | Miary | Zamiast wykresu „WIP portfela”: projekty wg statusu w miesiącach (12 wstecz + 3 do przodu) z przełącznikiem Stan w miesiącu / Przepływ; kafelek „Projekty w toku” bez czerwonego alarmu (#1). | js-miary, Styles, js-testy, js-start |
+| 06.11 | Miary | Zamiast wykresu „WIP portfela”: projekty wg statusu w miesiącach (12 wstecz + 3 do przodu) z przełącznikiem Stan w miesiącu / Przepływ; kafelek „Projekty w toku” bez czerwonego alarmu; w Miarach „zakończone” zamiast „zamknięte” (#1). | js-miary, Styles, js-testy, js-start |
 | 06.11 | Opóźnienie | Zakończony projekt liczy opóźnienie od faktycznej daty zakończenia, nie od końca na karcie (#2). | js-model, js-testy, js-start |
 | 06.11 | Porządki | Bez nazwy firmy w kodzie: tytuł „Planer”, nowy Arkusz „Planer – dane”, przykładowe e-maile @firma.pl, klucze przeglądarki `planer.*` (jednorazowo znikają zapamiętane: skala, „Od”, widok, metoda). Wersje wszystkich plików: 2026-11-06. Działanie bez zmian. | wszystkie poza Styles |
 | 05.11 | Repo | Kod w repozytorium; specyfikacja (SPEC.md); testy serwera i przeglądarki na atrapie Apps Script; manifest `appsscript.json`. Kod planera bez zmian. | — |
