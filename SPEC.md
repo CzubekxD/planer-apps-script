@@ -1,6 +1,6 @@
 # Planer — specyfikacja
 
-Stan: paczka **2026-11-06b**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
+Stan: paczka **2026-11-06c**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
 
 ## 1. Po co to jest
 
@@ -120,14 +120,15 @@ Stary format `{ projects: [...] }` (bez zakładek) jest czytany jako jedna zakł
    - usunięcie przegrywa ze zmianą (nie kasujemy cudzej pracy);
    - nowe projekty z obu stron zostają.
    - po 3 nieudanych próbach scalania zapis jest wstrzymany, a użytkownik widzi czerwony alarm z prośbą o Eksport.
-4. **[Z-11]** Arkusz nie odpowiada przy wczytaniu → czerwony pasek, edycja zablokowana, plan z `localStorage` **nie** jest pokazywany jako prawdziwy. Nieudany zapis → czerwony pasek, kolejne zapisy wstrzymane.
-5. Arkusz rządzi: pusty Arkusz = pusty plan (bez dociągania z `localStorage`). Bez Apps Script (plik otwarty lokalnie) planer działa na `localStorage` jako makieta.
+4. **[Z-16]** Przywrócenie z Historii w trakcie zapisu czeka, aż zapisy w toku się skończą, i dopiero wtedy podmienia plan; następna zmiana zapisuje się bez scalania. Render bez zmian w planie nie wysyła zapisu.
+5. **[Z-11]** Arkusz nie odpowiada przy wczytaniu → czerwony pasek, edycja zablokowana, plan z `localStorage` **nie** jest pokazywany jako prawdziwy. Nieudany zapis → czerwony pasek, kolejne zapisy wstrzymane.
+6. Arkusz rządzi: pusty Arkusz = pusty plan (bez dociągania z `localStorage`). Bez Apps Script (plik otwarty lokalnie) planer działa na `localStorage` jako makieta.
 
 ## 7. Wdrażanie i kontrola wklejenia
 
 Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). Dlatego:
 
-- Index skleja wszystkie `js-*` w **jeden** `<script>` przez `include()` w stałej kolejności: model, os, karta, portfel, historia, miary, testy, start. Kolejność ma znaczenie, bo późniejsze pliki używają stałych z wcześniejszych.
+- Index skleja wszystkie `js-*` w **jeden** `<script>` przez `include()` w stałej kolejności: sesja, model, os, karta, portfel, historia, miary, testy, start. Kolejność ma znaczenie, bo późniejsze pliki używają stałych z wcześniejszych.
 - **[Z-12]** Każdy `js-*` (poza js-start) kończy się linią `// ===== KONIEC <plik> (wersja X)` i `window.__planerParts.push('<plik>@X')`. Mapa `PLANER_FILES` w js-start zawiera dokładnie te wersje. `CODE_VERSION` = `PLAN_LIB_VERSION` = `PLANER_VERSION`. Plik ucięty przy wklejaniu albo w starej wersji → czerwony pasek z nazwą pliku.
 - Łapacz błędów w Index zamiast pustej strony pokazuje komunikat z listą plików, które wczytały się do końca.
 - Aktualizacja wyłącznie przez **Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa wersja → Wdróż**. „Nowe wdrożenie” zmienia adres. Adres `/dev` pokazuje ostatnio zapisany kod, ale pisze do **tego samego** Arkusza.
@@ -156,9 +157,10 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-6 duży plan | server: `duży plan…` |
 | Z-7 daty | js-testy (sekcja „daty”) |
 | Z-8 conflict po stronie serwera | server: `zapis ze starą wersją…` |
-| Z-9 kolejka zapisów | e2e: `wyścig zapisów…` |
-| Z-10 scalanie | e2e: `dwie karty…` (×2); js-testy (sekcja „scalanie”) |
-| Z-11 brak Arkusza | server: `Arkusz niedostępny…`; e2e: `brak Arkusza…` |
+| Z-9 kolejka zapisów | sesja: `szybkie zmiany…`, `zmiana cofnięta…`; e2e: `wyścig zapisów…` |
+| Z-10 scalanie | sesja: `konflikt z inną kartą…`, `edytor karty…`; e2e: `dwie karty…` (×2); js-testy (sekcja „scalanie”) |
+| Z-11 brak Arkusza | server: `Arkusz niedostępny…`; sesja: `błąd Arkusza…`, `Arkusz niedostępny…`; e2e: `brak Arkusza…` |
+| Z-16 przywrócenie w trakcie zapisu | sesja: `przywrócenie w trakcie zapisu…`, `render bez zmian…`; e2e: `przywrócenie z Historii w trakcie zapisu…` |
 | Z-12 kontrola wklejenia | server: `kontrola wklejenia…`, `doGet skleja…`; e2e: `ucięty plik…`, `stary Code.gs…` |
 | Z-13 testy w przeglądarce | e2e: `start: wszystkie testy w przeglądarce OK…` |
 | Z-14 opóźnienie | js-testy (sekcja „opóźnienie”) |

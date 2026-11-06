@@ -121,7 +121,7 @@ test('describeChanges: każda różnica daje wpis (inaczej serwer pominąłby za
 
 test('doGet skleja wszystkie pliki w jeden <script> we właściwej kolejności', () => {
   const html = createGas().doGet();
-  const order = ['js-model', 'js-os', 'js-karta', 'js-portfel', 'js-historia', 'js-miary', 'js-testy'];
+  const order = ['js-sesja', 'js-model', 'js-os', 'js-karta', 'js-portfel', 'js-historia', 'js-miary', 'js-testy'];
   const pos = [...order.map(n => html.indexOf(`window.__planerParts.push('${n}@`)), html.indexOf('const PLANER_FILES')];
   order.push('js-start');
   pos.forEach((p, i) => assert.ok(p > 0, `${order[i]} dołączony`));

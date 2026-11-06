@@ -20,10 +20,12 @@ Web app Google Apps Script. Kod w `src/` wkleja do edytora Apps Script ręcznie 
 - `PlanLib.gs` jest jedynym źródłem `describeChanges` / `mergeForEditor`. Przeglądarka dostaje ten sam kod przez `planLibSource()`, więc nie kopiuj tej logiki do `js-*`.
 - Uprawnienia egzekwuje serwer. Przeglądarka tylko ukrywa przyciski.
 - Bez Arkusza edycja jest zablokowana. Nie ma przycisku „Przeładuj” (kasował zmiany). Konflikty rozwiązuje `mergePlans`.
+- Zapis do Arkusza (wersja, kolejka, konflikty, przywrócenie) robi wyłącznie `createPlanSession` w `js-sesja`. Nie zna DOM ani `google.script.run`: dostaje adapter serwera i funkcje ekranu. Reszta kodu woła tylko `save()` (→ `session.changed()`) i `session.restore(id)`.
 - Przyspieszanie ładowania (CacheService) odłożone świadomie.
 
 ## Testy
 - `tests/mock-gas.js`: atrapa SpreadsheetApp / Session / LockService / PropertiesService / HtmlService. Uruchamia prawdziwe `Code.gs` + `PlanLib.gs` w `vm`, a Arkusz trzyma w pamięci (`gas.sheet(name)`, `gas.breakSheet()`).
+- `tests/sesja.test.js`: `js-sesja` w Node na atrapie, odpowiedzi serwera wypuszczane ręcznie (`srv.respond()`), więc wyścigi są deterministyczne. Każda zmiana zapisu zaczyna się od testu tutaj.
 - `tests/browser.js`: `openPlaner(gas, { user, delay, query, html })` otwiera prawdziwy Index w Chromium. `google.script.run` idzie do atrapy z opóźnieniem `delay` ms, jak wolny Apps Script. `edit(page, fn)` zmienia `AppState` i woła `renderAll()`, czyli dokładnie tę ścieżkę zapisu, której używa UI. `settle(page)` czeka na koniec zapisów.
 - W tym środowisku Playwright jest preinstalowany globalnie: `NODE_PATH=$(npm root -g) npm test`, bez `npm install` i `playwright install`.
 - Brakuje jeszcze testu e2e przeciągania (nowy wiersz, pas innej osoby, ramka „tu wyląduje” = miejsce po upuszczeniu).

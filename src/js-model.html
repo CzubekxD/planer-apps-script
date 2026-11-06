@@ -421,129 +421,41 @@ function applyData(data) {
 
 const statusEl = f('statusZapisu');
 const GAS = (typeof google !== 'undefined' && google.script && google.script.run) ? google.script.run : null;
-let loaded = false, saveTimer = null, sheetOk = !!GAS, conflict = false;
+let loaded = false;   // plan wczytany i pokazany; false = zmiany na ekranie nie są zapisywane (wczytywanie, podmiana planu)
 const hhmm = () => { const t = new Date(); return `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`; };
 
 function saveLocal() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize())); return true; }
   catch (err) { console.error(err); return false; }
 }
-// ZAPIS DO ARKUSZA
-// 1) Kolejka: kolejny zapis wychodzi dopiero po odpowiedzi na poprzedni (z aktualną wersją) — inaczej Apps Script
-//    (1–3 s na zapis) dostawał drugi zapis ze starą wersją i odrzucał go jako „konflikt”, a planer przestawał zapisywać.
-// 2) Prawdziwy konflikt (ktoś inny / inna karta zapisała w międzyczasie): scalamy sami, projekt po projekcie (mergePlans).
-let saveInFlight = false, savePending = false, serverBase = null, conflictRetries = 0;
+// ZAPIS DO ARKUSZA: cała logika (kolejka, konflikty, przywrócenie) jest w js-sesja.
+// Tu tylko podpinamy sesję do ekranu i do google.script.run.
+const gasCall = (name, ...args) => new Promise((ok, fail) => GAS.withSuccessHandler(ok).withFailureHandler(fail)[name](...args));
+const session = GAS ? createPlanSession({
+  server: { load: () => gasCall('loadPlan'), save: (plan, version) => gasCall('savePlan', plan, version), restore: id => gasCall('restoreVersion', id) },
+  readPlan: serialize,
+  applyPlan: plan => { const tab = AppState.activeTab; quiet(() => applyData({ ...plan, activeTab: tab })); },
+  normalize: normSer,
+  canSave: () => loaded && canEditAny() && !Preview.as,
+  report: { status: t => { statusEl.textContent = t; }, alarm }
+}) : null;
+// Wołane po każdej zmianie (renderAll kończy się save()). Sesja sama pomija render bez zmian.
 function save() {
-  if (!loaded || !canEditAny() || conflict || Preview.as) return;
+  if (!loaded || !canEditAny() || Preview.as) return;
   saveLocal();
-  if (!GAS) { statusEl.textContent = `Zapisano lokalnie ${hhmm()}`; return; }
-  if (!sheetOk) { statusEl.textContent = 'Arkusz niedostępny – zapis tylko lokalny'; return; }
-  statusEl.textContent = 'Zapisywanie…';
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(flushSave, 800);
-}
-function flushSave() {
-  if (saveInFlight) { savePending = true; return; }   // poczekaj na odpowiedź poprzedniego zapisu
-  saveInFlight = true; savePending = false;
-  const payload = serialize();
-  GAS.withSuccessHandler(res => {
-        saveInFlight = false;
-        if (res && res.conflict) return resolveConflict();
-        if (res && res.version != null) AppState.version = res.version;
-        serverBase = normSer(payload);
-        conflictRetries = 0;
-        if (savePending) return flushSave();             // w międzyczasie były kolejne zmiany — wyślij je teraz
-        statusEl.textContent = res && res.ignored ? `Zapisano ${hhmm()} – zmiany poza Twoimi kartami pominięte` : `Zapisano w Arkuszu ${hhmm()}`;
-        if (res && res.ignored) refreshFromSheet();       // pokaż prawdziwy stan (tylko gdy nic nie czeka na zapis)
-      })
-     .withFailureHandler(err => {
-        saveInFlight = false;
-        console.error(err);
-        conflict = true;   // blokujemy kolejne zapisy, żeby nic nie szło „w próżnię”
-        statusEl.textContent = 'ZAPIS NIEUDANY';
-        alarm(`Ostatnia zmiana NIE zapisała się w Arkuszu (${err && err.message || err}). Twoje zmiany są w kopii w tej przeglądarce — nie zamykaj karty, przyślij ten komunikat.`);
-      })
-     .savePlan(payload, AppState.version);
-}
-// Ktoś zapisał w międzyczasie: pobieramy stan z Arkusza, scalamy z naszym i zapisujemy wynik
-function resolveConflict() {
-  if (++conflictRetries > 3) {
-    conflict = true;
-    statusEl.textContent = 'ZAPIS WSTRZYMANY';
-    alarm('Nie udało się pogodzić Twoich zmian ze zmianami w Arkuszu (3 próby). Nie zamykaj karty — zrób Eksport i przyślij komunikat.');
-    return;
-  }
-  statusEl.textContent = 'Scalam ze zmianami z Arkusza…';
-  saveInFlight = true;
-  GAS.withSuccessHandler(res => {
-        saveInFlight = false;
-        const theirs = normSer(res && res.data);
-        const { plan, clashes } = mergePlans(serverBase || theirs, normSer(serialize()), theirs);
-        const tab = AppState.activeTab;
-        quiet(() => applyData({ ...plan, activeTab: tab }));
-        AppState.version = res.version ?? null;
-        serverBase = theirs;
-        if (clashes.length) alarm(`Projekt ${clashes.map(t => `„${t}”`).join(', ')} zmienił też ktoś inny w tym samym czasie. Zostawiłem Twoją wersję; poprzednia jest w Historii zmian.`);
-        flushSave();
-      })
-     .withFailureHandler(err => { saveInFlight = false; conflict = true; alarm(`Nie mogę pobrać planu do scalenia (${err && err.message || err}). Nie zamykaj karty, przyślij komunikat.`); })
-     .loadPlan();
-}
-// Odśwież z Arkusza tylko wtedy, gdy nic lokalnego nie czeka na zapis
-function refreshFromSheet() {
-  if (saveInFlight || savePending) return;
-  GAS.withSuccessHandler(res => {
-        if (saveInFlight || savePending) return;
-        const tab = AppState.activeTab;
-        quiet(() => applyData({ ...(res.data || {}), activeTab: tab }));
-        AppState.version = res.version ?? null;
-        serverBase = normSer(res.data);
-      }).loadPlan();
+  if (!session) { statusEl.textContent = `Zapisano lokalnie ${hhmm()}`; return; }
+  if (!session.available()) { statusEl.textContent = 'Arkusz niedostępny – zapis tylko lokalny'; return; }
+  session.changed();
 }
 // Render bez wyzwalania zapisu
 function quiet(fn) { const was = loaded; loaded = false; try { fn(); renderAll(); } finally { loaded = was; } }
 
-// Postać porównywalna: plan znormalizowany tak samo, jak robi to planer
+// Postać porównywalna: plan znormalizowany tak samo, jak robi to planer (projekt bez id dostaje stałe id, nie losowe)
 function normSer(d) {
   if (!d) return { wipLimit: 2, horizonMonths: 20, tabs: [] };
   const tabs = Array.isArray(d.tabs) && d.tabs.length ? d.tabs : [{ id: 'portfolio', title: 'Portfolio', projects: d.projects || [] }];
   return { wipLimit: d.wipLimit, horizonMonths: d.horizonMonths,
-    tabs: tabs.map(t => ({ id: t.id, title: cleanName(t.title) || 'Bez nazwy', projects: (t.projects || []).map(p => serProject(normProject(p))) })) };
-}
-// Scalanie trójstronne (base = to, co Arkusz miał przy naszym ostatnim zapisie; mine = nasz stan; theirs = Arkusz teraz).
-// Projekt po projekcie: zmienił tylko jeden — bierzemy jego wersję; zmienili oboje — nasza wersja + zgłoszenie (clashes).
-// Usunięcie przegrywa ze zmianą (nie kasujemy cudzej pracy). Ustawienia (WIP, horyzont, nazwy zakładek): nasze, jeśli je zmieniliśmy.
-function mergePlans(base, mine, theirs) {
-  const J = JSON.stringify, chg = (a, b) => J(a) !== J(b);
-  const idx = pl => { const m = new Map(); pl.tabs.forEach(t => t.projects.forEach((p, i) => m.set(p.id, { p, tab: t.id, i }))); return m; };
-  const B = idx(base), M = idx(mine), T = idx(theirs);
-  const tB = new Map(base.tabs.map(t => [t.id, t])), tM = new Map(mine.tabs.map(t => [t.id, t])), tT = new Map(theirs.tabs.map(t => [t.id, t]));
-  const clashes = [], chosen = [];
-  new Set([...T.keys(), ...M.keys(), ...B.keys()]).forEach(id => {
-    const b = B.get(id), m = M.get(id), t = T.get(id);
-    let pick = null;
-    if (!b) pick = m || t;                                   // nowy projekt (u nas albo u nich)
-    else if (!m && !t) pick = null;                          // usunięty przez oboje
-    else if (!m) pick = (chg(t.p, b.p) || t.tab !== b.tab) ? t : null;   // my usunęliśmy — zostaje, jeśli oni go zmienili
-    else if (!t) pick = (chg(m.p, b.p) || m.tab !== b.tab) ? m : null;   // oni usunęli — zostaje, jeśli my go zmieniliśmy
-    else {
-      const mc = chg(m.p, b.p) || m.tab !== b.tab, tc = chg(t.p, b.p) || t.tab !== b.tab;
-      pick = mc ? m : t;
-      if (mc && tc && (chg(m.p, t.p) || m.tab !== t.tab)) clashes.push(m.p.title);
-    }
-    if (pick) chosen.push({ ...pick, order: T.has(id) ? T.get(id).i : 1e6 + (M.has(id) ? M.get(id).i : 0) });
-  });
-  const ids = [...theirs.tabs.map(t => t.id), ...mine.tabs.map(t => t.id)].filter((id, i, a) => a.indexOf(id) === i);
-  const used = new Set(chosen.map(c => c.tab));
-  const keep = ids.filter(id => {
-    const gone = (tB.has(id) && !tM.has(id)) || (tB.has(id) && !tT.has(id));   // ktoś usunął zakładkę
-    return !gone || used.has(id);
-  });
-  if (!keep.length) keep.push(ids[0] || 'portfolio');
-  const titleOf = id => { const b = tB.get(id), m = tM.get(id), t = tT.get(id); return (m && (!b || m.title !== b.title)) ? m.title : (t || m || b || { title: 'Portfolio' }).title; };
-  const tabs = keep.map(id => ({ id, title: titleOf(id), projects: chosen.filter(c => (keep.includes(c.tab) ? c.tab : keep[0]) === id).sort((x, y) => x.order - y.order).map(c => c.p) }));
-  const pick = k => (mine[k] !== base[k] ? mine[k] : theirs[k]);
-  return { plan: { wipLimit: pick('wipLimit'), horizonMonths: pick('horizonMonths'), tabs }, clashes };
+    tabs: tabs.map(t => ({ id: t.id, title: cleanName(t.title) || 'Bez nazwy', projects: (t.projects || []).map((p, i) => serProject(normProject({ ...p, id: p.id || `bez-id-${t.id}-${i}` }))) })) };
 }
 // Czerwony pasek na górze: coś jest nie tak i użytkownik MUSI to zobaczyć (brak Arkusza, nieudany zapis, zła wersja plików)
 function alarm(msg) {
@@ -582,14 +494,10 @@ function load(done) {
     return;
   }
   statusEl.textContent = 'Wczytywanie z Arkusza…';
-  GAS.withSuccessHandler(res => {
-        res = res || {};
+  session.load().then(res => {
         Perm.user = Perm.realUser = String(res.user || '').toLowerCase();
         Perm.realOwner = !!res.isOwner;
         AppState.serverParts = res.parts || {};
-        sheetOk = true;
-        AppState.version = res.version ?? null;
-        serverBase = normSer(res.data);
         // Arkusz rządzi: pusty Arkusz = pusty plan (bez dociągania localStorage)
         applyData(hasPlan(res.data) ? res.data : { projects: [] });
         setReadOnly(!res.isOwner);
@@ -597,20 +505,17 @@ function load(done) {
         loaded = true;
         if (res.isOwner) statusEl.textContent = `Wczytano ${hhmm()}`;
         done();
-      })
-     .withFailureHandler(err => {
+      }, err => {
         // Bez Arkusza nie pokazujemy kopii z przeglądarki i blokujemy edycję — inaczej zmiany przepadają po cichu
         console.error(err);
-        sheetOk = false;
         Perm.realOwner = false;
         applyData({ projects: [] });
         setReadOnly(true);
         statusEl.textContent = 'Brak połączenia z Arkuszem';
         alarm(`Nie mogę wczytać planu z Arkusza (${err && err.message || err}). Edycja jest zablokowana, nic się nie zapisze. Odśwież stronę; jeśli to się powtarza, przyślij ten komunikat.`);
         done();
-      })
-     .loadPlan();
+      });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06b) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06b');
+// ===== KONIEC js-model (wersja 2026-11-06c) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06c');

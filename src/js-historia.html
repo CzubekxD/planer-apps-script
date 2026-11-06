@@ -61,17 +61,11 @@ function openHistory() {
 }
 function restoreEntry(entry, laterCount) {
   if (!confirm(`Przywrócić cały plan do stanu z ${fmtTs(entry.ts)}?\n\nCofniesz ${laterCount} ${laterCount === 1 ? 'późniejszą zmianę' : 'późniejszych zmian'} (wszystkich osób). Wpisy zostają w dzienniku, więc możesz do nich wrócić.`)) return;
-  const done = (data, version) => {
-    applyData(data);
-    if (version != null) AppState.version = version;
-    serverBase = normSer(data);   // punkt odniesienia do scalania = stan po cofnięciu
+  // Sesja czeka, aż skończą się zapisy w toku, i dopiero wtedy podmienia plan (bez fałszywego konfliktu po przywróceniu)
+  session.restore(entry.id).then(() => {
     closeHistory();
-    renderAll();
     statusEl.textContent = `Przywrócono stan z ${fmtTs(entry.ts)}`;
-  };
-  GAS.withSuccessHandler(res => { if (res && res.data) done(res.data, res.version); else alert((res && res.error) || 'Nie udało się przywrócić.'); })
-     .withFailureHandler(err => alert('Nie udało się przywrócić: ' + (err.message || err)))
-     .restoreVersion(entry.id);
+  }, err => alert('Nie udało się przywrócić: ' + (err && err.message || err)));
 }
 f('historiaBtn').addEventListener('click', openHistory);
 const closeHistory = () => f('historiaModal').classList.remove('active');
@@ -79,5 +73,5 @@ f('historiaZamknij').addEventListener('click', closeHistory);
 f('historiaModal').addEventListener('mousedown', e => { if (e.target === f('historiaModal')) closeHistory(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHistory(); });
 
-// ===== KONIEC js-historia (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-historia@2026-11-06');
+// ===== KONIEC js-historia (wersja 2026-11-06c) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-historia@2026-11-06c');

@@ -1,0 +1,164 @@
+// js-sesja — Sesja planu: wczytanie, zapis do Arkusza, konflikty, przywrócenie
+// Zwykły JavaScript (bez <script>): Index.html skleja wszystkie js-* w jeden skrypt, w kolejności. Ten plik jest PIERWSZY.
+// Nie zna ekranu ani google.script.run: dostaje je z zewnątrz (createPlanSession), dzięki czemu testy sterują nim w Node.
+
+// 1. SESJA PLANU — jedyne miejsce, które wie o wersji planu, kolejce zapisów i scalaniu.
+// Zasady (SPEC Z-9, Z-10, Z-11):
+//  • w locie jest najwyżej jeden zapis; kolejny wychodzi po odpowiedzi, z nową wersją,
+//  • konflikt (ktoś zapisał w międzyczasie) → pobierz Arkusz, scal projekt po projekcie (mergePlans), zapisz wynik,
+//  • przywrócenie z Historii czeka, aż skończą się zapisy w toku, i dopiero wtedy podmienia plan,
+//  • błąd zapisu → alarm i stop, nic więcej nie idzie „w próżnię”.
+//
+// createPlanSession({ server, readPlan, applyPlan, normalize, canSave, report, delay })
+//   server     adapter Arkusza: load() → {data, version, …}, save(plan, version) → {version, ignored} | {conflict}, restore(id) → {data, version} | {error}
+//   readPlan   () → bieżący plan z ekranu (do zapisu)
+//   applyPlan  (plan) → podmienia plan na ekranie (bez wywoływania changed)
+//   normalize  (plan) → postać porównywalna (bez otwartej zakładki itp.)
+//   canSave    () → czy ta osoba w tym trybie może teraz zapisywać
+//   report     { status(tekst), alarm(tekst) }
+// Zwraca: load(), changed(), restore(id), idle(), available(), version()
+function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, report, delay = 800 }) {
+  const J = JSON.stringify;
+  const hhmm = () => { const t = new Date(); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+  let version = null;      // wersja Arkusza, na której opiera się nasz następny zapis
+  let base = null;         // plan z Arkusza w tej wersji (do scalania); null = nie wiemy
+  let synced = null;       // J(normalize(plan)) wysłany ostatnio albo wczytany — „render bez zmian” go nie rusza
+  let ok = false;          // Arkusz odpowiedział przy wczytaniu
+  let stopped = false;     // po błędzie zapisu albo nieudanym scalaniu: nic więcej nie wysyłamy
+  let timer = null, inFlight = false, pending = false, retries = 0;
+  let waiters = [];        // obietnice czekające na koniec zapisów (przywrócenie)
+
+  const isIdle = () => !timer && !inFlight && !pending;
+  const wake = () => { if (!isIdle()) return; const w = waiters; waiters = []; w.forEach(r => r()); };
+  const whenIdle = () => isIdle() ? Promise.resolve() : new Promise(r => waiters.push(r));
+  const adopt = (data, v) => { version = v ?? null; base = normalize(data); synced = J(base); };
+  const fail = msg => { stopped = true; inFlight = false; pending = false; report.status('ZAPIS NIEUDANY'); report.alarm(msg); wake(); };
+
+  function load() {
+    return server.load().then(res => {
+      res = res || {};
+      ok = true; stopped = false;
+      adopt(res.data, res.version);
+      return res;
+    }, err => { ok = false; throw err; });
+  }
+
+  // Wołane po każdej zmianie na ekranie (i po każdym renderze): zapis tylko wtedy, gdy plan naprawdę się zmienił
+  function changed() {
+    if (!ok || stopped || !canSave()) return;
+    if (J(normalize(readPlan())) === synced && !inFlight) return;
+    report.status('Zapisywanie…');
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; flush(); }, delay);
+  }
+
+  function flush() {
+    if (stopped) return wake();
+    if (inFlight) { pending = true; return; }
+    pending = false;
+    const payload = readPlan(), sent = J(normalize(payload));
+    if (sent === synced) { report.status(`Zapisano w Arkuszu ${hhmm()}`); return wake(); }   // to już poszło (np. zmiana cofnięta przed zapisem)
+    inFlight = true; synced = sent;
+    server.save(payload, version).then(res => {
+      inFlight = false;
+      res = res || {};
+      if (res.denied) return fail(res.error || 'Zapis odrzucony.');
+      if (res.conflict) return resolveConflict();
+      if (res.version != null) version = res.version;
+      retries = 0;
+      if (res.ignored) base = null;                          // serwer odrzucił część zmian: nie wiemy, co ma Arkusz
+      else base = JSON.parse(sent);
+      if (pending) return flush();                           // w międzyczasie były kolejne zmiany — wyślij je teraz
+      if (res.ignored) return refresh();
+      report.status(`Zapisano w Arkuszu ${hhmm()}`);
+      wake();
+    }, err => fail(`Ostatnia zmiana NIE zapisała się w Arkuszu (${err && err.message || err}). Twoje zmiany są w kopii w tej przeglądarce — nie zamykaj karty, przyślij ten komunikat.`));
+  }
+
+  // Ktoś zapisał w międzyczasie: pobieramy stan z Arkusza, scalamy z naszym i zapisujemy wynik
+  function resolveConflict() {
+    if (++retries > 3) return fail('Nie udało się pogodzić Twoich zmian ze zmianami w Arkuszu (3 próby). Nie zamykaj karty — zrób Eksport i przyślij komunikat.');
+    report.status('Scalam ze zmianami z Arkusza…');
+    inFlight = true;
+    server.load().then(res => {
+      inFlight = false;
+      const theirs = normalize(res && res.data);
+      const { plan, clashes } = mergePlans(base || theirs, normalize(readPlan()), theirs);
+      applyPlan(plan);
+      version = res.version ?? null; base = theirs; synced = J(theirs);
+      if (clashes.length) report.alarm(`Projekt ${clashes.map(t => `„${t}”`).join(', ')} zmienił też ktoś inny w tym samym czasie. Zostawiłem Twoją wersję; poprzednia jest w Historii zmian.`);
+      flush();
+    }, err => fail(`Nie mogę pobrać planu do scalenia (${err && err.message || err}). Nie zamykaj karty, przyślij komunikat.`));
+  }
+
+  // Po zapisie z pominiętymi zmianami (edytor karty): pokaż prawdziwy stan Arkusza
+  function refresh() {
+    inFlight = true;
+    server.load().then(res => {
+      inFlight = false;
+      if (pending) return flush();
+      adopt(res && res.data, res && res.version);
+      applyPlan(base);
+      report.status(`Zapisano ${hhmm()} – zmiany poza Twoimi kartami pominięte`);
+      wake();
+    }, err => fail(`Nie mogę odświeżyć planu z Arkusza (${err && err.message || err}). Nie zamykaj karty, przyślij komunikat.`));
+  }
+
+  // Przywrócenie z Historii: najpierw dokończ zapisy w toku, potem podmień cały plan
+  function restore(id) {
+    clearTimeout(timer);
+    if (timer) { timer = null; flush(); }
+    return whenIdle().then(() => {
+      inFlight = true;
+      return server.restore(id).then(res => {
+        inFlight = false;
+        if (!res || !res.data) { wake(); throw new Error((res && res.error) || 'Nie udało się przywrócić.'); }
+        adopt(res.data, res.version);
+        applyPlan(res.data);
+        wake();
+        return res;
+      }, err => { inFlight = false; wake(); throw err; });
+    });
+  }
+
+  return { load, changed, restore, idle: isIdle, available: () => ok, version: () => version };
+}
+
+// Scalanie trójstronne (base = to, co Arkusz miał przy naszym ostatnim zapisie; mine = nasz stan; theirs = Arkusz teraz).
+// Projekt po projekcie: zmienił tylko jeden — bierzemy jego wersję; zmienili oboje — nasza wersja + zgłoszenie (clashes).
+// Usunięcie przegrywa ze zmianą (nie kasujemy cudzej pracy). Ustawienia (WIP, horyzont, nazwy zakładek): nasze, jeśli je zmieniliśmy.
+function mergePlans(base, mine, theirs) {
+  const J = JSON.stringify, chg = (a, b) => J(a) !== J(b);
+  const idx = pl => { const m = new Map(); pl.tabs.forEach(t => t.projects.forEach((p, i) => m.set(p.id, { p, tab: t.id, i }))); return m; };
+  const B = idx(base), M = idx(mine), T = idx(theirs);
+  const tB = new Map(base.tabs.map(t => [t.id, t])), tM = new Map(mine.tabs.map(t => [t.id, t])), tT = new Map(theirs.tabs.map(t => [t.id, t]));
+  const clashes = [], chosen = [];
+  new Set([...T.keys(), ...M.keys(), ...B.keys()]).forEach(id => {
+    const b = B.get(id), m = M.get(id), t = T.get(id);
+    let pick = null;
+    if (!b) pick = m || t;                                   // nowy projekt (u nas albo u nich)
+    else if (!m && !t) pick = null;                          // usunięty przez oboje
+    else if (!m) pick = (chg(t.p, b.p) || t.tab !== b.tab) ? t : null;   // my usunęliśmy — zostaje, jeśli oni go zmienili
+    else if (!t) pick = (chg(m.p, b.p) || m.tab !== b.tab) ? m : null;   // oni usunęli — zostaje, jeśli my go zmieniliśmy
+    else {
+      const mc = chg(m.p, b.p) || m.tab !== b.tab, tc = chg(t.p, b.p) || t.tab !== b.tab;
+      pick = mc ? m : t;
+      if (mc && tc && (chg(m.p, t.p) || m.tab !== t.tab)) clashes.push(m.p.title);
+    }
+    if (pick) chosen.push({ ...pick, order: T.has(id) ? T.get(id).i : 1e6 + (M.has(id) ? M.get(id).i : 0) });
+  });
+  const ids = [...theirs.tabs.map(t => t.id), ...mine.tabs.map(t => t.id)].filter((id, i, a) => a.indexOf(id) === i);
+  const used = new Set(chosen.map(c => c.tab));
+  const keep = ids.filter(id => {
+    const gone = (tB.has(id) && !tM.has(id)) || (tB.has(id) && !tT.has(id));   // ktoś usunął zakładkę
+    return !gone || used.has(id);
+  });
+  if (!keep.length) keep.push(ids[0] || 'portfolio');
+  const titleOf = id => { const b = tB.get(id), m = tM.get(id), t = tT.get(id); return (m && (!b || m.title !== b.title)) ? m.title : (t || m || b || { title: 'Portfolio' }).title; };
+  const tabs = keep.map(id => ({ id, title: titleOf(id), projects: chosen.filter(c => (keep.includes(c.tab) ? c.tab : keep[0]) === id).sort((x, y) => x.order - y.order).map(c => c.p) }));
+  const pick = k => (mine[k] !== base[k] ? mine[k] : theirs[k]);
+  return { plan: { wipLimit: pick('wipLimit'), horizonMonths: pick('horizonMonths'), tabs }, clashes };
+}
+
+// ===== KONIEC js-sesja (wersja 2026-11-06c) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-sesja@2026-11-06c');

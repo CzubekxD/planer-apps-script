@@ -16,7 +16,7 @@ Wszystko, co trafia do edytora Apps Script, leży w `src/`, po jednym pliku na p
 | `PlanLib.gs` | PlanLib.gs | logika wspólna serwera i przeglądarki (opis zmian, uprawnienia edytora) |
 | `Index.html` | Index | szkielet strony |
 | `Styles.html` | Styles | wygląd |
-| `js-*.html` | js-model, js-os, js-karta, js-portfel, js-historia, js-miary, js-testy, js-start | aplikacja w przeglądarce |
+| `js-*.html` | js-sesja, js-model, js-os, js-karta, js-portfel, js-historia, js-miary, js-testy, js-start | aplikacja w przeglądarce |
 | `appsscript.json` | manifest (Ustawienia projektu → „Pokaż plik manifestu”) | strefa czasowa, „wykonaj jako ja”, dostęp w domenie |
 
 ## Pierwsze wdrożenie (nowy projekt Apps Script)

@@ -54,7 +54,7 @@ async function openPlaner(gas, { user, delay = 0, query = '', html } = {}) {
 
 // Czeka, aż przeglądarka nie ma nic do zapisania i serwer nic nie przetwarza
 async function settle(page) {
-  await page.waitForFunction(() => !saveInFlight && !savePending && !document.getElementById('statusZapisu').textContent.startsWith('Zapisywanie'), null, { timeout: 20000 });
+  await page.waitForFunction(() => (!session || session.idle()) && !document.getElementById('statusZapisu').textContent.startsWith('Zapisywanie'), null, { timeout: 20000 });
   await page.waitForTimeout(50);
   while (page.pending) await page.waitForTimeout(50);
 }

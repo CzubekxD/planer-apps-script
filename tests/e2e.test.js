@@ -163,3 +163,26 @@ test('Miary: wykres wg statusu w miesiącach, przełącznik stan / przepływ zap
   assert.deepEqual(page.errors, []);
   await page.close2();
 });
+
+test('przywrócenie z Historii w trakcie zapisu (wolny serwer): plan = przywrócony stan, kolejna zmiana bez scalania', async () => {
+  const gas = createGas();
+  seed(gas, proj('a', 'v1'));
+  gas.call('savePlan', [{ wipLimit: 2, horizonMonths: 20, tabs: [{ id: 't1', title: 'Portfolio', projects: [proj('a', 'v2')] }] }, 1], OWNER);
+  const v1 = gas.call('listHistory').find(e => e.changes.some(c => c.startsWith('Nowy projekt')));
+  const page = await openPlaner(gas, { delay: 800 });
+  await rename(page, 'a', 'v3');
+  await page.waitForTimeout(900);                                   // zapis v3 w locie
+  page.on('dialog', d => d.accept());                              // „Przywrócić cały plan…?” → Tak
+  await page.evaluate(id => restoreEntry({ id, ts: Date.now() }, 1), v1.id);
+  await page.waitForTimeout(100);
+  await settle(page);
+  assert.deepEqual(titles(gas), ['v1']);
+  assert.deepEqual(await page.evaluate(() => AppState.projects.map(p => p.title)), ['v1']);
+  const calls = gas.state.calls.length;
+  await rename(page, 'a', 'v1 poprawione');
+  await settle(page);
+  assert.deepEqual(gas.state.calls.slice(calls), ['savePlan'], 'jeden zapis, bez scalania');
+  assert.deepEqual(titles(gas), ['v1 poprawione']);
+  assert.equal(await alarmText(page), '');
+  await page.close2();
+});
