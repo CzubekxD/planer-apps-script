@@ -1,6 +1,6 @@
 # Planer (Apps Script)
 
-Oś czasu portfela projektów i warsztatów OPEX jako aplikacja internetowa Google Apps Script. Dane trzyma w Arkuszu Google. Podgląd jest dla wszystkich w organizacji, edycję kart nadaje się po e-mailu, a każdy zapis trafia do historii z możliwością cofnięcia.
+Oś czasu portfela projektów i warsztatów jako aplikacja internetowa Google Apps Script. Dane trzyma w Arkuszu Google. Podgląd jest dla wszystkich w organizacji, edycję kart nadaje się po e-mailu, a każdy zapis trafia do historii z możliwością cofnięcia.
 
 - **Jak ma działać:** [SPEC.md](SPEC.md)
 - **Co się zmieniło:** [CHANGELOG.md](CHANGELOG.md) (szczegóły: dokument „Planer – opis zmian”)
