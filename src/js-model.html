@@ -192,6 +192,17 @@ const diffDays = DATE_LIB.diffDays;
 const formatDate = DATE_LIB.format;
 const isoWeek = DATE_LIB.isoWeek;
 
+// TERMIN [start, end): w danych koniec jest WYŁĄCZNY (dzień po ostatnim dniu), a na ekranie i w doneAt — ostatni dzień.
+// Tylko TERM zamienia jedno na drugie; reszta kodu nie dodaje ani nie odejmuje „1 dnia” przy końcu (pilnuje test w server.test.js).
+const TERM = {
+  lastDay: end => end ? addDays(end, -1) : null,                 // koniec wyłączny → ostatni dzień
+  endAfter: lastDay => lastDay ? addDays(lastDay, 1) : null,     // ostatni dzień → koniec wyłączny
+  days: (start, end) => diffDays(start, end),                    // długość w dniach (z ostatnim dniem)
+  label: (start, end) => `${formatDate(start)} – ${formatDate(TERM.lastDay(end))}`,
+  contains: (start, end, day) => start <= day && day < end,
+  overlaps: (start, end, from, to) => start < to && end > from
+};
+
 const SCALES = {
   day:   { pxPerDay: 36, drawDays: 5 },
   week:  { pxPerDay: 20, drawDays: 14 },
@@ -203,7 +214,7 @@ const dateToPx = (date) => DATE_LIB.toPx(date, axisNow());
 const pxToDate = (px) => DATE_LIB.fromPx(px, axisNow());
 
 // Opóźnienie wobec planu pierwotnego (planowany go nie ma); zakończony liczy się od faktycznej daty zakończenia (koniec w danych jest wyłączny)
-const actualEnd = p => (p.status === 'done' && p.doneAt) ? addDays(p.doneAt, 1) : p.end;
+const actualEnd = p => (p.status === 'done' && p.doneAt) ? TERM.endAfter(p.doneAt) : p.end;
 const delayDays = p => (p.status !== 'planned' && p.baselineEnd && actualEnd(p)) ? diffDays(p.baselineEnd, actualEnd(p)) : 0;
 const viewEnd = () => new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + AppState.horizonMonths, 1);
 const trackWidth = () => dateToPx(viewEnd());
@@ -410,7 +421,7 @@ function normProject(p) {
 function lifecycleInvariants(p) {
   if (p.status === 'planned') return { ...p, startedAt: null, doneAt: null, baselineStart: null, baselineEnd: null };
   return { ...p,
-    doneAt: p.status === 'done' ? (p.doneAt || (p.end ? addDays(p.end, -1) : null)) : null,
+    doneAt: p.status === 'done' ? (p.doneAt || TERM.lastDay(p.end)) : null,
     baselineStart: p.baselineStart || (p.start ? new Date(p.start) : null),
     baselineEnd: p.baselineEnd || (p.end ? new Date(p.end) : null) };
 }
@@ -441,12 +452,12 @@ function ongoingSpan(p, today) {
   if (p.status === 'planned' || !hasDates(p)) return null;
   return [p.startedAt || p.start, p.status === 'done' ? actualEnd(p) : (p.end > today ? p.end : Infinity)];
 }
-const ongoingIn = (p, from, to, today) => { const s = ongoingSpan(p, today); return !!s && s[0] < to && s[1] > from; };
+const ongoingIn = (p, from, to, today) => { const s = ongoingSpan(p, today); return !!s && TERM.overlaps(s[0], s[1], from, to); };
 // Planowany w okresie: termin z karty nachodzi na okres; planowany, któremu minęła data startu, zostaje planowanym od dziś w przód (jak w Miarach)
-const plannedIn = (p, from, to, today) => p.status === 'planned' && hasDates(p) && ((p.start < to && p.end > from) || (p.start < today && to > today));
+const plannedIn = (p, from, to, today) => p.status === 'planned' && hasDates(p) && (TERM.overlaps(p.start, p.end, from, to) || (p.start < today && to > today));
 const projectsOngoingOn = (projects, day) => projects.filter(p => ongoingIn(p, day, addDays(day, 1), day));
 // Czas realizacji (dni, włącznie): od zobowiązania do zakończenia; tylko zakończony
-const leadTime = p => (p.status === 'done' && p.startedAt && p.doneAt) ? diffDays(p.startedAt, p.doneAt) + 1 : null;
+const leadTime = p => (p.status === 'done' && p.startedAt && p.doneAt) ? TERM.days(p.startedAt, TERM.endAfter(p.doneAt)) : null;
 // Jeden stan na okres (Miary): zakończony > w trakcie > planowany (na koniec okresu). Przeszłość i bieżący okres = faktyczny stan,
 // przyszłość = termin z karty (termin, który już minął, nie zmienia stanu).
 function stateInPeriod(p, from, to, today) {
@@ -455,9 +466,9 @@ function stateInPeriod(p, from, to, today) {
     if (p.status === 'done') return null;
     if (p.status === 'ongoing' && p.end <= today) return 'ongoing';
     if (p.status === 'planned' && p.start < today) return 'planned';
-    const last = addDays(p.end, -1);
+    const last = TERM.lastDay(p.end);
     if (last >= from && last < to) return 'done';
-    if (p.start < to && p.end > from) return 'ongoing';
+    if (TERM.overlaps(p.start, p.end, from, to)) return 'ongoing';
     return p.status === 'planned' && p.start >= to ? 'planned' : null;
   }
   const cut = to > today ? addDays(today, 1) : to;   // bieżący okres liczy się do dziś
@@ -586,5 +597,5 @@ function load(done) {
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06e');
+// ===== KONIEC js-model (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06f');

@@ -150,3 +150,16 @@ test('kontrola wklejenia: stopki js-* = mapa PLANER_FILES w js-start, a serwer =
   assert.equal(gas.versions.CODE_VERSION, planerVersion, 'CODE_VERSION (Code.gs) ≠ PLANER_VERSION (js-start)');
   assert.equal(gas.versions.PLAN_LIB_VERSION, planerVersion, 'PLAN_LIB_VERSION (PlanLib.gs) ≠ PLANER_VERSION (js-start)');
 });
+
+test('termin: poza TERM (js-model) w kodzie nie ma ręcznych „±1 dzień” przy końcu terminu', () => {
+  const fs = require('fs'), path = require('path');
+  const dir = path.join(__dirname, '..', 'src');
+  const bad = [];
+  fs.readdirSync(dir).filter(n => /^js-.*\.html$/.test(n) && n !== 'js-testy.html').forEach(n => {
+    fs.readFileSync(path.join(dir, n), 'utf8').split('\n').forEach((line, i) => {
+      if (/TERM = \{|^\s+(lastDay|endAfter):/.test(line)) return;   // definicja TERM
+      if (/addDays\([^()]*(end|End|Incl|doneAt|tempEnd)[^()]*,\s*-?1\)|diffDays\([^()]*\)\s*\+\s*1|addDays\(addDays\(/.test(line)) bad.push(`${n}:${i + 1}: ${line.trim().slice(0, 90)}`);
+    });
+  });
+  assert.deepEqual(bad, []);
+});

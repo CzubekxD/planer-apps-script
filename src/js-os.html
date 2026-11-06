@@ -109,7 +109,7 @@ function renderScaleLinear() {
       const w = diffDays(a, b) * d;
       el.style.width = `${w}px`;
       el.innerHTML = w >= 60 ? `T${isoWeek(a)}<small>${String(a.getDate()).padStart(2,'0')}.${String(a.getMonth()+1).padStart(2,'0')}</small>` : (w >= 28 ? `T${isoWeek(a)}` : '');
-      el.title = `Tydzień ${isoWeek(a)}: ${formatDate(a)} – ${formatDate(addDays(b, -1))}`;
+      el.title = `Tydzień ${isoWeek(a)}: ${TERM.label(a, b)}`;
       botFrag.appendChild(el);
       a = b;
     }
@@ -195,7 +195,7 @@ function makeKlocek(p, lane, sub) {
 
   const datesEl = document.createElement('div');
   datesEl.className = 'klocek-daty';
-  datesEl.textContent = `${formatDate(p.start)} - ${formatDate(addDays(p.end, -1))}`;
+  datesEl.textContent = TERM.label(p.start, p.end);
 
   const handleLeft = document.createElement('div'); handleLeft.className = 'resize-handle resize-left';
   const handleRight = document.createElement('div'); handleRight.className = 'resize-handle resize-right';
@@ -231,7 +231,7 @@ function makeKlocek(p, lane, sub) {
     if (dragState || drawState.active) return;
     const parts = [p.title];
     if (!isPlanned) {
-      parts.push(opoz > 0 ? `Opóźnienie: +${opoz} dni (plan: ${formatDate(addDays(p.baselineEnd, -1))})` : opoz < 0 ? `Przed planem: ${-opoz} dni` : 'Zgodnie z planem');
+      parts.push(opoz > 0 ? `Opóźnienie: +${opoz} dni (plan: ${formatDate(TERM.lastDay(p.baselineEnd))})` : opoz < 0 ? `Przed planem: ${-opoz} dni` : 'Zgodnie z planem');
     } else parts.push('Projekt planowany');
     parts.push(`Metoda: ${METHODS[methodOf(p)].label}`);
     if (p.startedAt) parts.push(`Start faktyczny: ${formatDate(p.startedAt)}`);
@@ -306,7 +306,7 @@ function renderLanes() {
           ghost.style.left = `${gl}px`;
           ghost.style.width = `${Math.max(AppState.minBlockWidth, gw)}px`;
           ghost.style.top = `${sub * AppState.rowHeight + AppState.blockOffsetY}px`;
-          ghost.title = `Plan pierwotny: ${formatDate(p.baselineStart)} – ${formatDate(addDays(p.baselineEnd, -1))}`;
+          ghost.title = `Plan pierwotny: ${TERM.label(p.baselineStart, p.baselineEnd)}`;
           track.appendChild(ghost);
         }
       }
@@ -479,7 +479,7 @@ document.addEventListener('pointerdown', (e) => {
     dragState = { ...base, type: target.classList.contains('resize-left') ? 'left' : 'right', origEndPx: dateToPx(p.end) };
   } else {
     const track = klocek.parentElement;
-    dragState = { ...base, type: 'move', durationDays: diffDays(p.start, p.end), srcTrack: track, srcPerson: track.dataset.person || '',
+    dragState = { ...base, type: 'move', durationDays: TERM.days(p.start, p.end), srcTrack: track, srcPerson: track.dataset.person || '',
       srcRow: Math.round((parseFloat(klocek.style.top) - AppState.blockOffsetY) / AppState.rowHeight),
       vertical: AppState.viewRole !== ALL_VIEW };   // w „Wszystko” wiersz = projekt, więc tylko w poziomie
   }
@@ -523,7 +523,7 @@ function showLanding(t, leftPx) {
   landingEl.style.width = `${parseFloat(dragState.el.style.width)}px`;
   landingEl.style.top = `${row * AppState.rowHeight + AppState.blockOffsetY}px`;
   const daty = dragState.el.querySelector('.klocek-daty');
-  if (daty) daty.textContent = `${formatDate(start)} - ${formatDate(addDays(end, -1))}`;   // daty na kaflu na żywo
+  if (daty) daty.textContent = TERM.label(start, end);   // daty na kaflu na żywo
 }
 function hideLanding() {
   if (landingEl) landingEl.remove();
@@ -547,7 +547,7 @@ document.addEventListener('pointermove', (e) => {
     DOM.drawGhost.style.width = `${drawState.currentWidth}px`;
     const tempStart = pxToDate(drawState.currentLeft);
     const tempEnd = pxToDate(drawState.currentLeft + Math.max(AppState.minBlockWidth, drawState.currentWidth));
-    showTooltip(e.clientX, e.clientY, `Od: ${formatDate(tempStart)}\nDo: ${formatDate(addDays(tempEnd, -1))}${drawState.person ? `\n${AppState.viewRole}: ${drawState.person}` : ''}`);
+    showTooltip(e.clientX, e.clientY, `Od: ${formatDate(tempStart)}\nDo: ${formatDate(TERM.lastDay(tempEnd))}${drawState.person ? `\n${AppState.viewRole}: ${drawState.person}` : ''}`);
     return;
   }
   if (!dragState) return;
@@ -563,7 +563,7 @@ document.addEventListener('pointermove', (e) => {
     const newStartPx = Math.max(0, dragState.origStartPx + dx);
     dragState.el.style.left = `${newStartPx}px`;
     dragState.tempStart = pxToDate(newStartPx);
-    const lines = [`${formatDate(dragState.tempStart)} – ${formatDate(addDays(addDays(dragState.tempStart, dragState.durationDays), -1))}`];
+    const lines = [TERM.label(dragState.tempStart, addDays(dragState.tempStart, dragState.durationDays))];
     if (dragState.vertical) {
       const t = dropTarget(e.clientY);
       dragState.target = t;
@@ -578,7 +578,7 @@ document.addEventListener('pointermove', (e) => {
     const newEndPx = Math.max(dragState.origStartPx + AppState.minBlockWidth, dragState.origEndPx + dx);
     dragState.el.style.width = `${newEndPx - dragState.origStartPx}px`;
     dragState.tempEnd = pxToDate(newEndPx);
-    showTooltip(e.clientX, e.clientY, `Koniec: ${formatDate(addDays(dragState.tempEnd, -1))}`);
+    showTooltip(e.clientX, e.clientY, `Koniec: ${formatDate(TERM.lastDay(dragState.tempEnd))}`);
   } else if (dragState.type === 'left') {
     const maxDx = dragState.origEndPx - dragState.origStartPx - AppState.minBlockWidth;
     const newStartPx = Math.max(0, dragState.origStartPx + Math.min(dx, maxDx));
@@ -631,5 +631,5 @@ function showTooltip(x, y, text) {
 }
 function hideTooltip() { DOM.tooltip.style.display = 'none'; }
 
-// ===== KONIEC js-os (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-os@2026-11-06e');
+// ===== KONIEC js-os (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-os@2026-11-06f');

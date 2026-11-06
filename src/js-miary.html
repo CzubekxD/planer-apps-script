@@ -9,11 +9,11 @@ const mies = d => `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice
 function metrics() {
   const today = startOfToday();
   const all = AppState.projects.filter(hasDates);
-  const done = all.filter(p => leadTime(p) != null).map(p => ({ p, lt: leadTime(p), plan: (p.baselineStart && p.baselineEnd) ? diffDays(p.baselineStart, p.baselineEnd) : null }));
+  const done = all.filter(p => leadTime(p) != null).map(p => ({ p, lt: leadTime(p), plan: (p.baselineStart && p.baselineEnd) ? TERM.days(p.baselineStart, p.baselineEnd) : null }));
   const lts = done.map(x => x.lt);
   const P = { p50: pctl(lts, .5), p85: pctl(lts, .85), p95: pctl(lts, .95) };
   const ongoingNow = projectsOngoingOn(all, today);
-  const active = ongoingNow.filter(p => p.startedAt).map(p => ({ p, age: diffDays(p.startedAt, today) + 1 })).sort((a, b) => b.age - a.age);
+  const active = ongoingNow.filter(p => p.startedAt).map(p => ({ p, age: TERM.days(p.startedAt, TERM.endAfter(today)) })).sort((a, b) => b.age - a.age);
   const stMonths = statusByMonth(AppState.projects, today);
   const months = []; for (let i = 11; i >= 0; i--) { const from = new Date(today.getFullYear(), today.getMonth() - i, 1), to = new Date(today.getFullYear(), today.getMonth() - i + 1, 1); months.push({ from, label: mies(from), n: done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length }); }
   const tp = []; for (let i = 0; i < 26; i++) { const to = addDays(today, -7 * i), from = addDays(to, -7); tp.push(done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length); }
@@ -31,7 +31,7 @@ function metrics() {
   }
   const mc = planned.map((p, i) => {
     const w50 = pctl(hits[i], .5), w85 = pctl(hits[i], .85);
-    return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: addDays(p.end, -1), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(diffDays(p.start, p.end) * R.r85)) : null };
+    return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: TERM.lastDay(p.end), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(diffDays(p.start, p.end) * R.r85)) : null };
   });
   const inProgressNow = ongoingNow.length;
   return { today, done, lts, P, active, stMonths, months, tp, ratios, onTime, R, mc, inProgressNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
@@ -217,5 +217,5 @@ document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => b.addEven
 applyWidok();
 renderAll();
 
-// ===== KONIEC js-miary (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-miary@2026-11-06e');
+// ===== KONIEC js-miary (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-miary@2026-11-06f');

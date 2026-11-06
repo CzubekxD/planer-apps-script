@@ -23,6 +23,7 @@ Web app Google Apps Script. Kod w `src/` wkleja do edytora Apps Script ręcznie 
 - Zapis do Arkusza (wersja, kolejka, konflikty, przywrócenie) robi wyłącznie `createPlanSession` w `js-sesja`. Nie zna DOM ani `google.script.run`: dostaje adapter serwera i funkcje ekranu. Reszta kodu woła tylko `save()` (→ `session.changed()`) i `session.restore(id)`.
 - Reguły zmiany statusu, zobowiązania i planu pierwotnego są tylko w `saveCard` (js-model). Karta zbiera dane i woła `saveCard`; nowy obiekt projektu zastępuje stary (poprzedni nietknięty, więc Anuluj nic nie zmienia).
 - „W trakcie” w okresie liczy tylko `ongoingIn` / `stateInPeriod` (js-model). Portfel, KPI i Miary nie piszą własnych warunków na daty i statusy.
+- Koniec terminu jest w danych wyłączny. „Ostatni dzień” ↔ „koniec” zamienia tylko `TERM` (js-model); test w server.test.js odrzuca ręczne `addDays(end, -1)` itp.
 - Przyspieszanie ładowania (CacheService) odłożone świadomie.
 
 ## Testy

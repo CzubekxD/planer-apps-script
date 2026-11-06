@@ -93,11 +93,11 @@ f('szablonKm').addEventListener('click', () => {
   const p = AppState.projects.find(x => x.id === currentEditId);
   const start = p ? p.start : tempCreateState.start, end = p ? p.end : tempCreateState.end;
   if (!start || !end) return;
-  const dur = Math.max(1, diffDays(start, end) - 1);
+  const dur = Math.max(1, diffDays(start, TERM.lastDay(end)));
   const have = new Set([...f('lista-km').querySelectorAll('.km-nazwa')].map(i => norm(i.value)));
   METHODS[f('m-metoda').value].km.forEach(([name, a, b]) => {
     if (have.has(norm(name))) return;
-    const date = typeof a === 'string' ? addDays(a === 'start' ? start : addDays(end, -1), b) : addDays(start, Math.round(dur * a));
+    const date = typeof a === 'string' ? addDays(a === 'start' ? start : TERM.lastDay(end), b) : addDays(start, Math.round(dur * a));
     addKmRow({ name, date });
   });
 });
@@ -148,8 +148,8 @@ function renderBaselineInfo(p) {
     return;
   }
   const d = delayDays(p);
-  const plan = `${formatDate(p.baselineStart)} – ${formatDate(addDays(p.baselineEnd, -1))}`;
-  const teraz = `${formatDate(p.start)} – ${formatDate(addDays(p.end, -1))}`;
+  const plan = TERM.label(p.baselineStart, p.baselineEnd);
+  const teraz = TERM.label(p.start, p.end);
   f('baselineTekst').innerHTML =
     `<div><b>Plan pierwotny:</b> ${plan}</div><div><b>Obecnie:</b> ${teraz}</div>` +
     (d > 0 ? `<div class="opoz">Opóźnienie: +${d} dni</div>` : d < 0 ? `<div class="ok">Przed planem o ${-d} dni</div>` : `<div class="ok">Zgodnie z planem</div>`);
@@ -181,7 +181,7 @@ function openModal(project = null) {
   // Daty: koniec w polu jest WŁĄCZNIE (ostatni dzień projektu), w danych wyłącznie (+1 dzień)
   const ds = project ? project.start : tempCreateState.start, de = project ? project.end : tempCreateState.end;
   f('projStart').value = ds ? toLocalISO(ds) : '';
-  f('projKoniec').value = de ? toLocalISO(addDays(de, -1)) : '';
+  f('projKoniec').value = de ? toLocalISO(TERM.lastDay(de)) : '';
   f('datyBlad').hidden = true;
   META_KEYS.forEach(k => { document.querySelector(`.metryczka [data-key="${k}"]`).value = project ? project[k] || '' : ''; });
   document.querySelectorAll('input[name="rag"]').forEach(r => { r.checked = !!project && r.value === project.rag; });
@@ -256,7 +256,7 @@ f('dodajBtn').addEventListener('click', () => {
   const dStart = fromLocalISO(f('projStart').value), dEndIncl = fromLocalISO(f('projKoniec').value);
   const blad = !dStart || !dEndIncl ? 'Podaj datę startu i końca.' : dEndIncl < dStart ? 'Koniec nie może być przed startem.' : '';
   if (blad) { f('datyBlad').textContent = blad; f('datyBlad').hidden = false; f(!dStart ? 'projStart' : 'projKoniec').focus(); return; }
-  data.start = dStart; data.end = addDays(dEndIncl, 1);
+  data.start = dStart; data.end = TERM.endAfter(dEndIncl);
   collectMethodFields();
   data.mf = { ...mfDraft };
   try { localStorage.setItem('planer.metoda', data.method); } catch (e) {}
@@ -293,5 +293,5 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!f('dodajBtn').hidden && getComputedStyle(f('dodajBtn')).display !== 'none') f('dodajBtn').click(); }   // Ctrl+S = Zapisz
 });
 
-// ===== KONIEC js-karta (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-karta@2026-11-06d');
+// ===== KONIEC js-karta (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-karta@2026-11-06f');

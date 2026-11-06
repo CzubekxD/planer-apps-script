@@ -50,7 +50,7 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
     const active = ongoingToday.has(p);
     const startsSoon = p.start > today && p.start <= in30;
     const d = delayDays(p);
-    if (d > 0) add(d > 14 ? 1 : 2, 'Opóźnienie', p, `Koniec przesunięty o ${d} dni wobec planu (${formatDate(addDays(p.baselineEnd, -1))} → ${formatDate(addDays(p.end, -1))}).`);
+    if (d > 0) add(d > 14 ? 1 : 2, 'Opóźnienie', p, `Koniec przesunięty o ${d} dni wobec planu (${formatDate(TERM.lastDay(p.baselineEnd))} → ${formatDate(TERM.lastDay(p.end))}).`);
     if (p.rag === 'red') add(1, 'Eskalacja', p, `Status czerwony${p.impediments ? ` — bloker: ${p.impediments}` : ''}.`);
     if (p.rag === 'amber') add(2, 'Ryzyko', p, `Status żółty${p.impediments ? ` — ${p.impediments}` : ''}.`);
     if (!p.goal || !p.kpi || !p.baseline) {
@@ -182,7 +182,7 @@ th { background: #E7EBE9; } .rag { display: inline-block; width: 9pt; height: 9p
   <div>
     <h2>Portfel: aktywne i startujące w 90 dni</h2>
     <table><tr><th>Projekt</th><th>Status</th><th>Cel</th><th>KPI (baseline → target)</th><th>Zespół / interesariusze</th><th>Termin</th><th>Vs plan</th><th>Blokery</th></tr>
-    ${active.map(p => `<tr><td><b>${esc(p.title)}</b></td><td><span class="rag ${esc(p.rag)}"></span>${ragLbl[p.rag || '']}</td><td>${esc(p.goal) || '<i>brak</i>'}</td><td>${esc([p.kpi, p.baseline].filter(Boolean).join(': ')) || '<i>brak</i>'}</td><td>${ludzie(teamOf(p)) || '—'}${stakeOf(p).length ? `<br><span class="sub">${ludzie(stakeOf(p))}</span>` : ''}</td><td>${formatDate(p.start)}<br>${formatDate(addDays(p.end, -1))}</td><td>${delayDays(p) > 0 ? `<b style="color:#AE3F37">+${delayDays(p)} dni</b>` : '—'}</td><td>${esc(p.impediments) || '—'}</td></tr>`).join('') || '<tr><td colspan="8">Brak projektów w tym oknie.</td></tr>'}
+    ${active.map(p => `<tr><td><b>${esc(p.title)}</b></td><td><span class="rag ${esc(p.rag)}"></span>${ragLbl[p.rag || '']}</td><td>${esc(p.goal) || '<i>brak</i>'}</td><td>${esc([p.kpi, p.baseline].filter(Boolean).join(': ')) || '<i>brak</i>'}</td><td>${ludzie(teamOf(p)) || '—'}${stakeOf(p).length ? `<br><span class="sub">${ludzie(stakeOf(p))}</span>` : ''}</td><td>${formatDate(p.start)}<br>${formatDate(TERM.lastDay(p.end))}</td><td>${delayDays(p) > 0 ? `<b style="color:#AE3F37">+${delayDays(p)} dni</b>` : '—'}</td><td>${esc(p.impediments) || '—'}</td></tr>`).join('') || '<tr><td colspan="8">Brak projektów w tym oknie.</td></tr>'}
     </table>
   </div>
 </div>
@@ -257,5 +257,5 @@ f('importPlik').addEventListener('change', async (e) => {
   } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
 });
 
-// ===== KONIEC js-portfel (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-portfel@2026-11-06e');
+// ===== KONIEC js-portfel (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06f');

@@ -21,6 +21,13 @@ test('tydzień ISO: 1.01.2027 = T53 (roku 2026)', () => eq(L.isoWeek(D(2027, 1, 
 test('tydzień ISO: 30.12.2024 = T1 (roku 2025)', () => eq(L.isoWeek(D(2024, 12, 30)), 1));
 test('tydzień ISO: 4.01.2027 = T1', () => eq(L.isoWeek(D(2027, 1, 4)), 1));
 
+// --- termin: koniec wyłączny (dzień po ostatnim) — tylko TERM zamienia „ostatni dzień” ↔ „koniec” ---
+test('termin: jednodniowy projekt — ostatni dzień = start, długość 1, etykieta „od – do”', () => { const s = D(2026, 11, 4), e = TERM.endAfter(s); eq([L.toISO(e), L.toISO(TERM.lastDay(e)), TERM.days(s, e), TERM.label(s, e)], ['2026-11-05', '2026-11-04', 1, '04.11.2026 – 04.11.2026']); });
+test('termin: koniec miesiąca i roku', () => eq([L.toISO(TERM.endAfter(D(2026, 11, 30))), L.toISO(TERM.lastDay(D(2027, 1, 1))), L.toISO(TERM.endAfter(D(2027, 2, 28)))], ['2026-12-01', '2026-12-31', '2027-03-01']));
+test('termin: długość przez zmianę czasu (marzec i październik)', () => eq([TERM.days(D(2027, 3, 27), TERM.endAfter(D(2027, 3, 29))), TERM.days(D(2026, 10, 24), TERM.endAfter(D(2026, 10, 26)))], [3, 3]));
+test('termin: nakładanie i zawieranie liczą koniec wyłącznie', () => { const s = D(2026, 11, 2), e = D(2026, 12, 1); eq([TERM.contains(s, e, D(2026, 11, 30)), TERM.contains(s, e, D(2026, 12, 1)), TERM.overlaps(s, e, D(2026, 12, 1), D(2027, 1, 1)), TERM.overlaps(s, e, D(2026, 11, 30), D(2026, 12, 1))], [true, false, false, true]); });
+test('termin: brak daty = brak wyniku (bez wyjątku)', () => eq([TERM.lastDay(null), TERM.endAfter(null)], [null, null]));
+
 // --- oś ---
 const AX = {
   day:   { origin: D(2026, 11, 1), pxPerDay: 36, monthWidth: 120 },
@@ -232,5 +239,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06e');
+// ===== KONIEC js-testy (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06f');
