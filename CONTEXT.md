@@ -42,6 +42,14 @@ _Avoid_: baseline (bez dopowiedzenia)
 Poziom KPI przed projektem i poziom, który projekt ma osiągnąć (np. 45 → 30 min).
 _Avoid_: baseline (bez dopowiedzenia), target
 
+**Zakończony**:
+Projekt, nad którym praca się skończyła, także wtedy, gdy przerwano go przed celem; ma faktyczną datę zakończenia.
+_Avoid_: zamknięty, gotowy, done
+
+**Opóźnienie**:
+Liczba dni, o którą koniec projektu wypada po końcu planu pierwotnego; dla zakończonego liczy się od faktycznej daty zakończenia.
+_Avoid_: poślizg, slip
+
 **Anulowany**, **Przerwany**:
 Takie stany nie istnieją. Planowany, który się nie odbędzie, usuwa się (ślad zostaje w Historii); projekt przerwany po zobowiązaniu oznacza się jako zakończony.
 
@@ -72,3 +80,17 @@ _Avoid_: współpracownik, edytor (bez dopowiedzenia)
 **Obserwator**:
 Każdy inny użytkownik w organizacji; widzi plan, niczego nie zmienia.
 _Avoid_: gość, osoba spoza kart, podgląd
+
+## Historia
+
+**Historia**:
+Lista wszystkich zapisanych zmian planu: kto, kiedy, co.
+_Avoid_: dziennik, log, changelog
+
+**Wpis**:
+Jedna zapisana zmiana w Historii razem z kopią całego planu z tej chwili.
+_Avoid_: rekord, wiersz dziennika
+
+**Przywrócenie**:
+Powrót całego planu do stanu z wybranego wpisu; samo też staje się wpisem.
+_Avoid_: cofnięcie, undo, rollback
