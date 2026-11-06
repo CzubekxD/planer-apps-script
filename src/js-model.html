@@ -375,11 +375,10 @@ function serialize() {
 function normProject(p) {
   const status = ['ongoing', 'done'].includes(p.status) ? p.status : 'planned';
   const start = fromLocalISO(p.start), end = fromLocalISO(p.end);
-  const ongoing = status !== 'planned';
   const mf = (p.mf && typeof p.mf === 'object') ? { ...p.mf } : {};
   if (p.sprint && !mf.sprint) mf.sprint = p.sprint;
   if (p.dod && !mf.dod) mf.dod = p.dod;
-  return {
+  return lifecycleInvariants({
     id: p.id || AppState.generateId(),
     title: p.title || 'Bez tytułu',
     ...Object.fromEntries(META_KEYS.map(k => [k, p[k] || ''])),
@@ -393,12 +392,12 @@ function normProject(p) {
     method: METHODS[p.method] ? p.method : ((mf.sprint || mf.dod) ? 'scrum' : 'klasyczna'),
     mf,
     startedAt: fromLocalISO(p.startedAt),
-    doneAt: status === 'done' ? (fromLocalISO(p.doneAt) || (end ? addDays(end, -1) : null)) : null,
+    doneAt: fromLocalISO(p.doneAt),
     history: Array.isArray(p.history) ? p.history.filter(h => h && h.date && h.status) : [],
     start, end,
-    baselineStart: ongoing ? (fromLocalISO(p.baselineStart) || (start ? new Date(start) : null)) : null,
-    baselineEnd: ongoing ? (fromLocalISO(p.baselineEnd) || (end ? new Date(end) : null)) : null
-  };
+    baselineStart: fromLocalISO(p.baselineStart),
+    baselineEnd: fromLocalISO(p.baselineEnd)
+  });
 }
 // CYKL ŻYCIA PROJEKTU (CONTEXT.md: Planowany, Zobowiązanie, Plan pierwotny, Zakończony).
 // Zapis karty: z poprzedniego projektu (albo null = nowy) i danych z karty powstaje NOWY projekt. Poprzedni zostaje nietknięty,
@@ -408,11 +407,22 @@ function normProject(p) {
 //    a planowany → zakończony bez zobowiązania bierze za zobowiązanie datę startu z karty,
 //  • plan pierwotny zamraża się przy zobowiązaniu (obecne daty z karty) i znika przy powrocie do planowanego,
 //  • rebaseline (przycisk „Nowy plan pierwotny”): plan pierwotny = obecne daty z karty; dla planowanego bez skutku.
+// Niezmienniki projektu (przy wczytaniu i po każdym zapisie karty): planowany nie ma zobowiązania, daty zakończenia ani planu
+// pierwotnego; w trakcie i zakończony mają plan pierwotny (brak = daty z karty); tylko zakończony ma datę zakończenia (brak = ostatni dzień).
+function lifecycleInvariants(p) {
+  if (p.status === 'planned') return { ...p, startedAt: null, doneAt: null, baselineStart: null, baselineEnd: null };
+  return { ...p,
+    doneAt: p.status === 'done' ? (p.doneAt || (p.end ? addDays(p.end, -1) : null)) : null,
+    baselineStart: p.baselineStart || (p.start ? new Date(p.start) : null),
+    baselineEnd: p.baselineEnd || (p.end ? new Date(p.end) : null) };
+}
 function saveCard(prev, data, today, { id, rebaseline = false } = {}) {
   const copy = d => d ? new Date(d) : null;
-  const p = prev
-    ? { ...prev, ...data, history: prev.history.map(h => ({ ...h })), startedAt: copy(prev.startedAt), doneAt: copy(prev.doneAt), baselineStart: copy(prev.baselineStart), baselineEnd: copy(prev.baselineEnd) }
-    : { id, ...data, baselineStart: null, baselineEnd: null, startedAt: null, doneAt: null, history: [] };
+  const own = prev && {   // głęboka kopia poprzedniego: nowy obiekt niczego z nim nie dzieli
+    ...prev, editors: [...prev.editors], assignments: prev.assignments.map(a => ({ ...a })), mf: { ...prev.mf },
+    milestones: prev.milestones.map(m => ({ ...m, date: copy(m.date), doneAt: copy(m.doneAt) })), history: prev.history.map(h => ({ ...h })),
+    startedAt: copy(prev.startedAt), doneAt: copy(prev.doneAt), baselineStart: copy(prev.baselineStart), baselineEnd: copy(prev.baselineEnd) };
+  const p = own ? { ...own, ...data } : { id, ...data, baselineStart: null, baselineEnd: null, startedAt: null, doneAt: null, history: [] };
   const wasCommitted = !!prev && prev.status !== 'planned';
   if (p.status !== (prev ? prev.status : null)) {
     p.history.push({ date: toLocalISO(today), status: p.status });
@@ -423,7 +433,7 @@ function saveCard(prev, data, today, { id, rebaseline = false } = {}) {
   }
   if (p.status === 'planned') { p.baselineStart = null; p.baselineEnd = null; }
   else if (!wasCommitted || !p.baselineStart || rebaseline) { p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end); }
-  return p;
+  return lifecycleInvariants(p);
 }
 const hasPlan = d => d && (Array.isArray(d.tabs) || Array.isArray(d.projects));
 

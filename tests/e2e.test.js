@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 76, `testów: ${res.length}`);   // stan na paczkę 06d: 76
+  assert.ok(res.length >= 79, `testów: ${res.length}`);   // stan na paczkę 06d: 79
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);
@@ -206,5 +206,21 @@ test('karta: „Nowy plan pierwotny” + Anuluj nic nie zmienia; + Zapisz przyjm
   await settle(page);
   assert.equal(stan(), '2026-11-09..2026-12-08', 'Zapisz: plan pierwotny = obecne daty');
   assert.equal(await alarmText(page), '');
+  await page.close2();
+});
+
+test('karta: edytor karty może przyjąć nowy plan pierwotny swojej karty; napis pokazuje daty wpisane na karcie', async () => {
+  const gas = createGas();
+  seed(gas, proj('a', 'Karta Jana', { status: 'ongoing', editors: [EDITOR], start: '2026-11-09', end: '2026-12-08', startedAt: '2026-11-05', baselineStart: '2026-11-02', baselineEnd: '2026-12-01' }));
+  const page = await openPlaner(gas, { user: EDITOR });
+  page.on('dialog', d => d.accept());
+  await page.evaluate(() => openModal(AppState.projects[0]));
+  await page.click('#rebaselineBtn');
+  await page.fill('#projKoniec', '2026-12-14');
+  assert.match(await page.textContent('#baselineTekst'), /14\.12\.2026/);
+  await page.click('#dodajBtn');
+  await settle(page);
+  const p = gas.storedPlan().tabs[0].projects[0];
+  assert.equal(`${p.baselineStart}..${p.baselineEnd}`, '2026-11-09..2026-12-15');
   await page.close2();
 });

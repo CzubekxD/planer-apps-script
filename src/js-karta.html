@@ -142,7 +142,8 @@ function renderBaselineInfo(p) {
   if (!p || p.status !== 'ongoing' || !p.baselineStart) { box.hidden = true; return; }
   box.hidden = false;
   if (rebaselineDraft) {
-    f('baselineTekst').innerHTML = `<div><b>Nowy plan pierwotny:</b> ${formatDate(p.start)} – ${formatDate(addDays(p.end, -1))}</div><div class="ok">Wejdzie po kliknięciu Zapisz (z datami z karty).</div>`;
+    const od = fromLocalISO(f('projStart').value), doo = fromLocalISO(f('projKoniec').value);   // daty wpisane teraz na karcie
+    f('baselineTekst').innerHTML = `<div><b>Nowy plan pierwotny:</b> ${od && doo ? `${formatDate(od)} – ${formatDate(doo)}` : 'daty z karty'}</div><div class="ok">Wejdzie po kliknięciu Zapisz.</div>`;
     f('rebaselineBtn').hidden = true;
     return;
   }
@@ -155,6 +156,7 @@ function renderBaselineInfo(p) {
   f('rebaselineBtn').hidden = d === 0 && diffDays(p.baselineStart, p.start) === 0;
 }
 
+['projStart', 'projKoniec'].forEach(id => f(id).addEventListener('input', () => { if (rebaselineDraft) renderBaselineInfo(AppState.projects.find(x => x.id === currentEditId)); }));
 f('rebaselineBtn').addEventListener('click', () => {
   const p = AppState.projects.find(x => x.id === currentEditId);
   if (!p || !canEditCard(p)) return;

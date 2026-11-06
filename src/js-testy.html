@@ -117,6 +117,22 @@ test('cykl: w trakcie → planowany = bez zobowiązania i planu pierwotnego', ()
 test('cykl: w trakcie, przesunięte daty bez zmiany statusu — plan pierwotny i historia bez zmian', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('ongoing', { start: D(2026, 11, 9), end: D(2026, 12, 8) })), 'ongoing zob:2026-11-05 zak:- plan:2026-11-02..2026-12-01 hist:po'));
 test('cykl: nowy plan pierwotny = obecne daty z karty', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('ongoing', { start: D(2026, 11, 9), end: D(2026, 12, 8) }), { rebaseline: true }), 'ongoing zob:2026-11-05 zak:- plan:2026-11-09..2026-12-08 hist:po'));
 test('cykl: nowy plan pierwotny dla planowanego nic nie ustawia', () => eq(cyZapis(CY('planned'), CY_KARTA('planned'), { rebaseline: true }), 'planned zob:- zak:- plan:-..- hist:'));
+test('cykl: edycja bez zmiany statusu — planowany zostaje bez zobowiązania, zakończony zachowuje datę zakończenia', () => {
+  eq(cyZapis(CY('planned', { history: [{ date: '2026-11-01', status: 'planned' }] }), CY_KARTA('planned', { title: 'nowa nazwa' })), 'planned zob:- zak:- plan:-..- hist:p');
+  eq(cyZapis(CY('done', { startedAt: '2026-11-05', doneAt: '2026-11-10', baselineStart: '2026-11-02', baselineEnd: '2026-12-01' }), CY_KARTA('done')), 'done zob:2026-11-05 zak:2026-11-10 plan:2026-11-02..2026-12-01 hist:');
+});
+test('cykl: niezmienniki przy wczytaniu — planowany bez zobowiązania i planu, zakończony ma datę zakończenia, w trakcie ma plan', () => {
+  eq(cyOpis(CY('planned', { startedAt: '2026-11-05', doneAt: '2026-11-10', baselineStart: '2026-11-02', baselineEnd: '2026-12-01' })), 'planned zob:- zak:- plan:-..- hist:');
+  eq(cyOpis(CY('done', { startedAt: '2026-11-05' })), 'done zob:2026-11-05 zak:2026-11-30 plan:2026-11-02..2026-12-01 hist:');
+  eq(cyOpis(CY('ongoing', { startedAt: '2026-11-05', doneAt: '2026-11-10' })), 'ongoing zob:2026-11-05 zak:- plan:2026-11-02..2026-12-01 hist:');
+});
+test('cykl: nowy obiekt nie dzieli z poprzednim osób, kamieni ani pól metody', () => {
+  const p = CY('ongoing', { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }], milestones: [{ name: 'K', date: '2026-11-20' }], mf: { dod: 'x' } });
+  const { assignments, milestones, mf, ...reszta } = CY_KARTA('ongoing');
+  const n = saveCard(p, reszta, CY_DZIS);
+  n.assignments[0].person = 'Ewa'; n.milestones[0].name = 'Z'; n.mf.dod = 'y';
+  eq([p.assignments[0].person, p.milestones[0].name, p.mf.dod], ['Jan', 'K', 'x']);
+});
 test('cykl: zapis karty nie zmienia poprzedniego obiektu (Anuluj = bez skutków)', () => { const p = W_TRAKCIE(), przed = JSON.stringify(serProject(p)); saveCard(p, CY_KARTA('done'), CY_DZIS, { rebaseline: true }); eq(JSON.stringify(serProject(p)), przed); });
 
 // --- opóźnienie (CONTEXT.md: „Opóźnienie”) ---
