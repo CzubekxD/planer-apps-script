@@ -159,7 +159,7 @@ function renderBaselineInfo(p) {
 ['projStart', 'projKoniec'].forEach(id => f(id).addEventListener('input', () => { if (rebaselineDraft) renderBaselineInfo(AppState.projects.find(x => x.id === currentEditId)); }));
 f('rebaselineBtn').addEventListener('click', () => {
   const p = AppState.projects.find(x => x.id === currentEditId);
-  if (!p || !canEditCard(p)) return;
+  if (!p || !Perm.canEditCard(p)) return;
   if (!confirm('Przyjąć obecne daty jako nowy plan? Opóźnienie zostanie wyzerowane po kliknięciu Zapisz.')) return;
   rebaselineDraft = true;
   renderBaselineInfo(p);
@@ -168,9 +168,9 @@ f('rebaselineBtn').addEventListener('click', () => {
 // Etykieta trybu nad kartą (dla nie-właściciela: „Możesz edytować” / „Tylko podgląd”)
 function openModalModeLabel() {
   const p = AppState.projects.find(x => x.id === currentEditId);
-  const editable = p ? canEditCard(p) : Perm.isOwner;
+  const editable = p ? Perm.canEditCard(p) : Perm.canManage();
   const tryb = f('modalTryb');
-  tryb.hidden = Perm.isOwner;
+  tryb.hidden = Perm.canManage();
   tryb.className = 'modal-tryb ' + (editable ? 'edycja' : 'podglad');
   tryb.textContent = editable ? '✎ Możesz edytować tę kartę' : 'Tylko podgląd — poproś właściciela planu o dopisanie Twojego e-maila';
 }
@@ -209,16 +209,16 @@ function openModal(project = null) {
 
   currentEditId = project ? project.id : null;
   // Uprawnienia w oknie: pola zablokowane, jeśli nie możesz edytować tej karty
-  const editable = project ? canEditCard(project) : Perm.isOwner;
+  const editable = project ? Perm.canEditCard(project) : Perm.canManage();
   modal.classList.toggle('bez-edycji', !editable);
   modal.querySelectorAll('.modal-karta input, .modal-karta select, .modal-karta textarea').forEach(el => { el.disabled = !editable; });
   f('projEdytorzy').value = project ? (project.editors || []).join(', ') : '';
-  f('projEdytorzy').disabled = !Perm.isOwner;
-  f('edytorzyPodp').textContent = Perm.isOwner
+  f('projEdytorzy').disabled = !Perm.canManage();
+  f('edytorzyPodp').textContent = Perm.canManage()
     ? 'Puste = tylko Ty. Wpisane osoby zmienią tę kartę (daty, status, metryczkę), ale nie usuną jej i nie dopiszą innych.'
     : 'Listę edytorów zmienia tylko właściciel planu.';
   const tryb = f('modalTryb');
-  tryb.hidden = Perm.isOwner;
+  tryb.hidden = Perm.canManage();
   tryb.className = 'modal-tryb ' + (editable ? 'edycja' : 'podglad');
   tryb.textContent = editable ? '✎ Możesz edytować tę kartę' : 'Tylko podgląd — poproś właściciela planu o dopisanie Twojego e-maila';
   renderBaselineInfo(project);
@@ -262,8 +262,8 @@ f('dodajBtn').addEventListener('click', () => {
   try { localStorage.setItem('planer.metoda', data.method); } catch (e) {}
 
   const prev = AppState.projects.find(x => x.id === currentEditId) || null;
-  if (prev ? !canEditCard(prev) : !Perm.isOwner) { closeModal(); return; }
-  data.editors = Perm.isOwner ? parseEmails(f('projEdytorzy').value) : (prev ? prev.editors : []);
+  if (prev ? !Perm.canEditCard(prev) : !Perm.canManage()) { closeModal(); return; }
+  data.editors = Perm.canManage() ? parseEmails(f('projEdytorzy').value) : (prev ? prev.editors : []);
   // Reguły statusu, zobowiązania i planu pierwotnego: saveCard (js-model)
   const next = saveCard(prev, data, startOfToday(), { id: AppState.generateId(), rebaseline: rebaselineDraft });
   if (prev) AppState.projects[AppState.projects.indexOf(prev)] = next;
@@ -285,7 +285,7 @@ modal.addEventListener('mouseup', e => {
   k.classList.remove('drgnij'); void k.offsetWidth; k.classList.add('drgnij');
   const tryb = f('modalTryb');
   tryb.hidden = false; tryb.className = 'modal-tryb podglad'; tryb.textContent = 'Masz niezapisane zmiany: Zapisz albo Anuluj';
-  clearTimeout(tryb._t); tryb._t = setTimeout(() => { if (Perm.isOwner) tryb.hidden = true; else openModalModeLabel(); }, 3000);
+  clearTimeout(tryb._t); tryb._t = setTimeout(() => { if (Perm.canManage()) tryb.hidden = true; else openModalModeLabel(); }, 3000);
 });
 document.addEventListener('keydown', e => {
   if (!modal.classList.contains('active')) return;
@@ -293,5 +293,5 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!f('dodajBtn').hidden && getComputedStyle(f('dodajBtn')).display !== 'none') f('dodajBtn').click(); }   // Ctrl+S = Zapisz
 });
 
-// ===== KONIEC js-karta (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-karta@2026-11-06f');
+// ===== KONIEC js-karta (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-karta@2026-11-06g');

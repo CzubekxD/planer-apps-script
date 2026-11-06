@@ -16,8 +16,8 @@ function renderJako() {
 }
 function setJako(email) {
   Preview.as = email || '';
-  Perm.user = Preview.as || Perm.realUser;
-  setReadOnly(!!Preview.as);
+  Perm.previewAs(Preview.as);
+  applyPerm();
   // Wyjście z podglądu = świeży stan z Arkusza; po błędzie zapisu zostaje ekran (niezapisane zmiany), bez wczytywania
   if (!Preview.as && !(session && session.stopped())) { loaded = false; return load(renderAll); }
   if (!Preview.as) { renderAll(); return; }
@@ -39,7 +39,7 @@ function drawHistory(entries) {
     row.className = 'hist-wpis' + (e.restore ? ' przywrocenie' : '');
     row.innerHTML = `<div><div class="kiedy">${esc(fmtTs(e.ts))}</div><div class="kto">${esc(e.user || '—')}</div></div>
       <ul>${e.changes.slice(0, 12).map(c => `<li>${esc(c)}</li>`).join('')}${e.changes.length > 12 ? `<li>… i ${e.changes.length - 12} więcej</li>` : ''}</ul><div></div>`;
-    if (Perm.isOwner && prev && prev.hasSnapshot !== false && !e.initial) {
+    if (Perm.canManage() && prev && prev.hasSnapshot !== false && !e.initial) {
       const b = document.createElement('button');
       b.className = 'btn btn-secondary btn-maly';
       b.textContent = 'Cofnij do stanu sprzed';
@@ -51,7 +51,7 @@ function drawHistory(entries) {
   });
 }
 function openHistory() {
-  f('historiaOpis').textContent = Perm.isOwner
+  f('historiaOpis').textContent = Perm.canManage()
     ? 'Kto, kiedy i co zmienił — każdy zapis to osobny wpis. „Cofnij do stanu sprzed” przywraca cały plan; samo przywrócenie też trafia do Historii, więc można je odkręcić.'
     : 'Kto, kiedy i co zmienił. Cofać zmiany może właściciel planu.';
   f('historiaModal').classList.add('active');
@@ -76,5 +76,5 @@ f('historiaZamknij').addEventListener('click', closeHistory);
 f('historiaModal').addEventListener('mousedown', e => { if (e.target === f('historiaModal')) closeHistory(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHistory(); });
 
-// ===== KONIEC js-historia (wersja 2026-11-06c) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-historia@2026-11-06c');
+// ===== KONIEC js-historia (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-historia@2026-11-06g');

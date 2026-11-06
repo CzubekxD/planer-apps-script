@@ -82,6 +82,26 @@ test('zmiana kolejności kart też jest zmianą', () => { const b = P0(); b.tabs
 test('przełączenie zakładki (activeTab) to nie zmiana planu', () => { const a = P0(), b = P0(); a.activeTab = 't1'; b.activeTab = 't2'; eq(PLAN_LIB.describeChanges(a, b), []); });
 test('edytor przenosi swoją kartę do innej zakładki → pominięte i zgłoszone', () => { const r = merge(p => { p.tabs.push({ id: 't2', title: 'Inna', projects: [p.tabs[0].projects.shift()] }); }); eq([r.plan.tabs.length, r.plan.tabs[0].projects.length, r.ignored], [1, 2, true]); });
 test('e-maile: małe litery, bez powtórzeń, bez śmieci', () => eq(parseEmails('Jan@Firma.pl; jan@firma.pl, ,nie-email anna@firma.pl'), ['jan@firma.pl', 'anna@firma.pl']));
+// --- Perm: rola (z Arkusza) × tryb („Podgląd jako”, brak Arkusza) ---
+const PERM_KARTY = [{ id: 'a', editors: ['jan@firma.pl'] }, { id: 'b', editors: [] }];
+const permWidok = (rola, tryb) => {
+  const P = createPerm(() => PERM_KARTY);
+  const [user, owner] = { owner: ['mati@firma.pl', true], editor: ['jan@firma.pl', false], observer: ['obcy@firma.pl', false] }[rola];
+  P.identify(user, owner);
+  if (tryb === 'offline') P.goOffline();
+  else if (tryb) P.previewAs(tryb);
+  return [P.role(), P.canManage(), P.canEditCard(PERM_KARTY[0]), P.canEditCard(PERM_KARTY[1]), P.canEditAny()].join(' ');
+};
+test('Perm: właściciel bez podglądu — zmienia wszystko', () => eq(permWidok('owner', ''), 'owner true true true true'));
+test('Perm: edytor karty — tylko swoją kartę', () => eq(permWidok('editor', ''), 'editor false true false true'));
+test('Perm: obserwator — nic', () => eq(permWidok('observer', ''), 'observer false false false false'));
+test('Perm: właściciel w podglądzie jako edytor — widzi jak edytor', () => eq(permWidok('owner', 'jan@firma.pl'), 'editor false true false true'));
+test('Perm: właściciel w podglądzie jako osoba spoza kart — widzi jak obserwator', () => eq(permWidok('owner', 'gosc@firma.pl'), 'observer false false false false'));
+test('Perm: podgląd — wielkość liter w e-mailu nie ma znaczenia', () => eq(permWidok('owner', 'Jan@Firma.pl'), 'editor false true false true'));
+test('Perm: edytor i obserwator nie mogą włączyć podglądu', () => { eq(permWidok('editor', 'obcy@firma.pl'), 'editor false true false true'); eq(permWidok('observer', 'jan@firma.pl'), 'observer false false false false'); });
+test('Perm: brak Arkusza blokuje edycję każdej roli', () => ['owner', 'editor', 'observer'].forEach(r => eq(permWidok(r, 'offline'), 'observer false false false false')));
+test('Perm: prawdziwy właściciel jest znany także w podglądzie (menu „Podgląd jako” zostaje)', () => { const P = createPerm(() => []); P.identify('mati@firma.pl', true); P.previewAs('jan@firma.pl'); eq([P.realOwner, P.previewing, P.user], [true, true, 'jan@firma.pl']); P.previewAs(''); eq([P.previewing, P.user, P.canManage()], [false, 'mati@firma.pl', true]); });
+test('Perm: brak Arkusza po udanym wczytaniu znów daje rolę z Arkusza', () => { const P = createPerm(() => []); P.goOffline(); P.identify('mati@firma.pl', true); eq([P.offline, P.role()], [false, 'owner']); });
 
 // --- widok osi: „nie dotyczy”, pusty pas nieprzypisanych, widok „Wszystko” ---
 test('„nie dotyczy”: N/A, n/d, nie dotyczy, myślnik', () => eq(['N/A', 'n/d', 'NA', 'nie dotyczy', '-', '–'].map(isNA), [true, true, true, true, true, true]));
@@ -240,5 +260,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06f');
+// ===== KONIEC js-testy (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06g');

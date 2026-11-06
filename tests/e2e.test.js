@@ -75,7 +75,7 @@ test('edytor karty: widzi ołówek tylko na swojej karcie, zapis innych kart jes
   const gas = createGas();
   seed(gas, proj('a', 'Karta Jana', { editors: [EDITOR] }), proj('b', 'Cudza'));
   const page = await openPlaner(gas, { user: EDITOR });
-  assert.deepEqual(await page.evaluate(() => [Perm.isOwner, canEditAny()]), [false, true]);
+  assert.deepEqual(await page.evaluate(() => [Perm.canManage(), Perm.canEditAny()]), [false, true]);
   assert.equal(await page.locator('.klocek.edytowalny').count(), 1);
   await rename(page, 'a', 'Karta Jana v2');
   await rename(page, 'b', 'Cudza HACK');
@@ -102,7 +102,7 @@ test('brak Arkusza: czerwony pasek i blokada edycji', async () => {
   const page = await openPlaner(gas);
   assert.match(await alarmText(page), /Edycja jest zablokowana/);
   assert.equal(await page.evaluate(() => document.body.classList.contains('tylko-odczyt')), true);
-  assert.equal(await page.evaluate(() => canEditAny()), false);
+  assert.equal(await page.evaluate(() => Perm.canEditAny()), false);
   await page.close2();
 });
 
