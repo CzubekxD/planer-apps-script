@@ -31,7 +31,7 @@ Projekt przed zobowiązaniem: pokazuje, do czego się przygotowujemy i co będzi
 _Avoid_: backlog, szkic
 
 **Zobowiązanie**:
-Moment, w którym decydujemy się na pracę nad projektem: przejście z „planowany” na „w trakcie”; od niego liczy się czas realizacji.
+Moment, w którym decydujemy się na pracę nad projektem: przejście z „planowany” na „w trakcie”; od niego liczy się czas realizacji. Przy przejściu z „planowany” prosto na „zakończony” za zobowiązanie uznaje się datę startu z karty.
 _Avoid_: start, uruchomienie, data zatwierdzenia
 
 **Plan pierwotny**:
@@ -60,7 +60,7 @@ Rola wiodąca projektu: osoba z biznesu, z którą i dla której projekt jest ro
 _Avoid_: klient, zleceniodawca
 
 **Limit WIP**:
-Największa liczba projektów, w których jedna osoba z Zespołu może być naraz w danym miesiącu, liczona w obrębie jednej zakładki; dotyczy zawsze osoby, nigdy całej zakładki.
+Największa liczba projektów w trakcie, w których jedna osoba z Zespołu może być naraz w danym miesiącu, liczona w obrębie jednej zakładki; planowane się do niego nie liczą. Dotyczy zawsze osoby, nigdy całej zakładki.
 _Avoid_: WIP portfela, limit obciążenia
 
 **Projekty w toku**:
