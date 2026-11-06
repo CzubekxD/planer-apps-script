@@ -98,7 +98,7 @@ Stary format `{ projects: [...] }` (bez zakładek) jest czytany jako jedna zakł
 
 ### 4.3 Daty
 - Daty w danych to lokalne `RRRR-MM-DD`, bez stref czasowych. Cała logika dat siedzi w `DATE_LIB` (js-model) z testami.
-- **[Z-19]** Termin `[start, end)`: koniec w danych jest wyłączny, a na ekranie i w dacie zakończenia jest ostatni dzień. Zamianę robi tylko `TERM` (js-model): ostatni dzień, koniec, długość, etykieta „od – do”, nakładanie. W `js-*` nie ma ręcznych „±1 dzień” przy końcu terminu (PlanLib ma własne `endIncl`, bo działa też na serwerze).
+- **[Z-19]** Termin `[start, end)`: koniec w danych jest wyłączny, a na ekranie i w dacie zakończenia jest ostatni dzień. Zamianę robi tylko `TERM` (js-model): ostatni dzień, koniec, koniec o danej długości, długość, etykieta „od – do”, zawieranie dnia, nakładanie. W `js-*` nie ma ręcznych „±1 dzień” przy końcu terminu (PlanLib ma własne `endIncl`, bo działa też na serwerze).
 - **[Z-7]** Nieistniejąca data (30 lutego) jest odrzucana, a nie przesuwana na 2 marca. Różnice dni są poprawne przez zmianę czasu (doby 23 h / 25 h). Tygodnie liczone wg ISO.
 
 ## 5. Serwer (API dla `google.script.run`)
@@ -135,7 +135,7 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 - **[Z-12]** Każdy `js-*` (poza js-start) kończy się linią `// ===== KONIEC <plik> (wersja X)` i `window.__planerParts.push('<plik>@X')`. Mapa `PLANER_FILES` w js-start zawiera dokładnie te wersje. `CODE_VERSION` = `PLAN_LIB_VERSION` = `PLANER_VERSION`. Plik ucięty przy wklejaniu albo w starej wersji → czerwony pasek z nazwą pliku.
 - Łapacz błędów w Index zamiast pustej strony pokazuje komunikat z listą plików, które wczytały się do końca.
 - Aktualizacja wyłącznie przez **Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa wersja → Wdróż**. „Nowe wdrożenie” zmienia adres. Adres `/dev` pokazuje ostatnio zapisany kod, ale pisze do **tego samego** Arkusza.
-- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 92) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
+- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 93) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
 
 ## 8. Czego świadomie nie ma
 - Jeden Index zamiast plików: temat zamknięty, zostaje podział na pliki.
@@ -170,4 +170,4 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-16 przywrócenie w trakcie zapisu | sesja: `przywrócenie w trakcie zapisu…`, `render bez zmian…`; e2e: `przywrócenie z Historii w trakcie zapisu…` |
 | Z-17 cykl życia projektu | js-testy (sekcja „cykl”, w tym niezmienniki przy wczytaniu); e2e: `karta: „Nowy plan pierwotny”…`, `karta: edytor karty…` |
 | Z-18 stan projektu w okresie | js-testy (sekcja „stan”: jeden portfel, cztery widoki); e2e: `portfel: heatmapa liczy tylko w trakcie…` |
-| Z-19 termin z wyłącznym końcem | js-testy (sekcja „termin”); server: `termin: poza TERM…` (skan kodu) |
+| Z-19 termin z wyłącznym końcem | js-testy (sekcja „termin”); server: `termin: poza TERM i DATE_LIB…` (skan kodu: każde `addDays(…, ±1)`, `diffDays(…) ± 1`, `getDate() ± 1`) |

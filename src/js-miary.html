@@ -31,7 +31,7 @@ function metrics() {
   }
   const mc = planned.map((p, i) => {
     const w50 = pctl(hits[i], .5), w85 = pctl(hits[i], .85);
-    return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: TERM.lastDay(p.end), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(diffDays(p.start, p.end) * R.r85)) : null };
+    return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: TERM.lastDay(p.end), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(TERM.days(p.start, p.end) * R.r85)) : null };
   });
   const inProgressNow = ongoingNow.length;
   return { today, done, lts, P, active, stMonths, months, tp, ratios, onTime, R, mc, inProgressNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };

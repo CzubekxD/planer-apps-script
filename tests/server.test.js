@@ -151,14 +151,28 @@ test('kontrola wklejenia: stopki js-* = mapa PLANER_FILES w js-start, a serwer =
   assert.equal(gas.versions.PLAN_LIB_VERSION, planerVersion, 'PLAN_LIB_VERSION (PlanLib.gs) ≠ PLANER_VERSION (js-start)');
 });
 
-test('termin: poza TERM (js-model) w kodzie nie ma ręcznych „±1 dzień” przy końcu terminu', () => {
+test('termin: poza TERM i DATE_LIB (js-model) w kodzie nie ma ręcznych „±1 dzień”', () => {
   const fs = require('fs'), path = require('path');
   const dir = path.join(__dirname, '..', 'src');
+  // Wyjątki: kroki osi czasu i kalendarza (to nie są końce terminów) — dopisuj świadomie, z powodem
+  const ALLOW = [
+    /for \(let day = new Date\(start\); day < end; day = addDays\(day, 1\)\)/,   // pętla dni na osi (js-os)
+  ];
+  const FORBID = [
+    /addDays\([^;]*?,\s*[-+]?\s*1\s*\)/,            // addDays(cokolwiek, ±1)
+    /diffDays\([^;]*?\)\s*[-+]\s*1\b/,              // diffDays(...) ± 1
+    /\b1\s*\+\s*diffDays\(/,                        // 1 + diffDays(...)
+    /getDate\(\)\s*[-+]\s*1\b/                      // getDate() ± 1
+  ];
   const bad = [];
   fs.readdirSync(dir).filter(n => /^js-.*\.html$/.test(n) && n !== 'js-testy.html').forEach(n => {
-    fs.readFileSync(path.join(dir, n), 'utf8').split('\n').forEach((line, i) => {
-      if (/TERM = \{|^\s+(lastDay|endAfter):/.test(line)) return;   // definicja TERM
-      if (/addDays\([^()]*(end|End|Incl|doneAt|tempEnd)[^()]*,\s*-?1\)|diffDays\([^()]*\)\s*\+\s*1|addDays\(addDays\(/.test(line)) bad.push(`${n}:${i + 1}: ${line.trim().slice(0, 90)}`);
+    const lines = fs.readFileSync(path.join(dir, n), 'utf8').split('\n');
+    let skip = null;   // wnętrze DATE_LIB i TERM w js-model
+    lines.forEach((line, i) => {
+      if (n === 'js-model.html' && /^const (DATE_LIB = \(\(\) => \{|TERM = \{)/.test(line)) skip = /^const DATE_LIB/.test(line) ? /^\}\)\(\);/ : /^\};/;
+      if (skip) { if (skip.test(line)) skip = null; return; }
+      if (ALLOW.some(r => r.test(line))) return;
+      if (FORBID.some(r => r.test(line))) bad.push(`${n}:${i + 1}: ${line.trim().slice(0, 100)}`);
     });
   });
   assert.deepEqual(bad, []);

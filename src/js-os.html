@@ -504,7 +504,7 @@ function startFreeMove() {
 let landingEl = null;
 function showLanding(t, leftPx) {
   const p = dragState.project;
-  const start = pxToDate(leftPx), end = addDays(start, dragState.durationDays);
+  const start = pxToDate(leftPx), end = TERM.endFrom(start, dragState.durationDays);
   const items = (t.track._items || []).filter(x => x.id !== p.id).concat([{ ...p, start, end, rowHint: t.row }]);
   const keep = lastDropped; lastDropped = p.id;
   const layout = stack(items);
@@ -563,7 +563,7 @@ document.addEventListener('pointermove', (e) => {
     const newStartPx = Math.max(0, dragState.origStartPx + dx);
     dragState.el.style.left = `${newStartPx}px`;
     dragState.tempStart = pxToDate(newStartPx);
-    const lines = [TERM.label(dragState.tempStart, addDays(dragState.tempStart, dragState.durationDays))];
+    const lines = [TERM.label(dragState.tempStart, TERM.endFrom(dragState.tempStart, dragState.durationDays))];
     if (dragState.vertical) {
       const t = dropTarget(e.clientY);
       dragState.target = t;
@@ -604,7 +604,7 @@ document.addEventListener('pointerup', () => {
   let hasChanged = false;
   if (d.hasMoved) {
     if (d.type === 'move' && d.tempStart) {
-      if (+d.tempStart !== +p.start) { p.start = d.tempStart; p.end = addDays(p.start, d.durationDays); hasChanged = true; }
+      if (+d.tempStart !== +p.start) { p.start = d.tempStart; p.end = TERM.endFrom(p.start, d.durationDays); hasChanged = true; }
       if (d.target) {
         const laneChanged = d.target.track !== d.srcTrack && moveToLane(p, AppState.viewRole, d.srcPerson, d.target.person);
         if (laneChanged || d.target.row !== d.srcRow) { p.rowHint = d.target.row; lastDropped = p.id; hasChanged = true; }
