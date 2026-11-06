@@ -47,7 +47,7 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
 
   const ongoingToday = new Set(projectsOngoingOn(projects, today));
   projects.filter(p => hasDates(p) && p.status !== 'done' && (ongoingToday.has(p) || p.end > today)).forEach(p => {   // otwarte: w trakcie (także po terminie) albo planowane przed końcem
-    const active = ongoingToday.has(p);
+    const ongoing = ongoingToday.has(p);
     const startsSoon = p.start > today && p.start <= in30;
     const d = delayDays(p);
     if (d > 0) add(d > 14 ? 1 : 2, 'Opóźnienie', p, `Koniec przesunięty o ${d} dni wobec planu (${formatDate(TERM.lastDay(p.baselineEnd))} → ${formatDate(TERM.lastDay(p.end))}).`);
@@ -55,9 +55,9 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
     if (p.rag === 'amber') add(2, 'Ryzyko', p, `Status żółty${p.impediments ? ` — ${p.impediments}` : ''}.`);
     if (!p.goal || !p.kpi || !p.baseline) {
       const brak = [!p.goal && 'celu', !p.kpi && 'KPI', !p.baseline && 'baseline/target'].filter(Boolean).join(', ');
-      add(active || startsSoon ? 2 : 3, 'Metryczka', p, `Brak ${brak}.`);
+      add(ongoing || startsSoon ? 2 : 3, 'Metryczka', p, `Brak ${brak}.`);
     }
-    if (['scrum', 'hybryda'].includes(methodOf(p)) && !p.mf.dod && (active || startsSoon)) add(3, 'DoD', p, 'Brak Definition of Done.');
+    if (['scrum', 'hybryda'].includes(methodOf(p)) && !p.mf.dod && (ongoing || startsSoon)) add(3, 'DoD', p, 'Brak Definition of Done.');
     p.milestones.filter(m => !m.done && m.date < today).forEach(m => add(diffDays(m.date, today) > 14 ? 1 : 2, 'Kamień milowy', p, `„${m.name}” po terminie o ${diffDays(m.date, today)} dni (${formatDate(m.date)}).`));
   });
 
@@ -72,15 +72,15 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
 
 function computeKpi(decisions, projects = AppState.projects, today = startOfToday(), months = heatMonths(1)) {
   const valid = projects.filter(hasDates);
-  const active = projectsOngoingOn(valid, today);   // w trakcie dziś (także po terminie z karty); planowany po dacie startu się nie liczy
+  const ongoing = projectsOngoingOn(valid, today);   // w trakcie dziś (także po terminie z karty); planowany po dacie startu się nie liczy
   const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
   const load = computeLoad(months, projects, today);
   return {
-    active: active.length,
+    ongoing: ongoing.length,
     next90: next90.length,
-    red: active.filter(p => p.rag === 'red').length,
-    amber: active.filter(p => p.rag === 'amber').length,
-    delayed: active.filter(p => delayDays(p) > 0).length,
+    red: ongoing.filter(p => p.rag === 'red').length,
+    amber: ongoing.filter(p => p.rag === 'amber').length,
+    delayed: ongoing.filter(p => delayDays(p) > 0).length,
     overloaded: load.filter(r => r.counts[0] > AppState.wipLimit).length,
     critical: decisions.filter(d => d.prio === 1).length
   };
@@ -91,7 +91,7 @@ function renderPortfolio() {
   const k = computeKpi(decisions);
 
   f('portfelKpi').innerHTML = [
-    ['W trakcie dziś', k.active, false],
+    ['W trakcie dziś', k.ongoing, false],
     ['Start w 90 dni', k.next90, false],
     ['Opóźnione', k.delayed, k.delayed > 0],
     ['Czerwone / żółte', `${k.red} / ${k.amber}`, k.red > 0],
@@ -131,7 +131,7 @@ function openObeyaReview() {
   const top = decisions.slice(0, 3);
   const rank = { red: 0, amber: 1, green: 2, '': 3 };
   const ongoingToday = new Set(projectsOngoingOn(AppState.projects, today));
-  const active = AppState.projects   // Obeya: w trakcie dziś + planowane ze startem w 90 dni
+  const obeyaRows = AppState.projects   // Obeya: w trakcie dziś + planowane ze startem w 90 dni
     .filter(p => ongoingToday.has(p) || (p.status === 'planned' && hasDates(p) && p.end > today && p.start <= addDays(today, 90)))
     .sort((a, b) => (rank[a.rag] - rank[b.rag]) || a.start - b.start);
   const months = heatMonths(6);
@@ -166,7 +166,7 @@ th { background: #E7EBE9; } .rag { display: inline-block; width: 9pt; height: 9p
 <button class="print-btn" onclick="window.print()">Drukuj / PDF</button>
 <div class="top"><h1>Obeya — przegląd portfela projektów</h1><div class="sub">Stan na ${formatDate(today)} · limit WIP: ${AppState.wipLimit} proj./osobę</div></div>
 <div class="kpi">
-  <div><b>${k.active}</b>w trakcie dziś</div>
+  <div><b>${k.ongoing}</b>w trakcie dziś</div>
   <div><b>${k.next90}</b>start w 90 dni</div>
   <div class="${k.red ? 'al' : ''}"><b>${k.red} / ${k.amber}</b>czerwone / żółte</div>
   <div class="${k.overloaded ? 'al' : ''}"><b>${k.overloaded}</b>osoby ponad limit</div>
@@ -182,7 +182,7 @@ th { background: #E7EBE9; } .rag { display: inline-block; width: 9pt; height: 9p
   <div>
     <h2>Portfel: aktywne i startujące w 90 dni</h2>
     <table><tr><th>Projekt</th><th>Status</th><th>Cel</th><th>KPI (baseline → target)</th><th>Zespół / interesariusze</th><th>Termin</th><th>Vs plan</th><th>Blokery</th></tr>
-    ${active.map(p => `<tr><td><b>${esc(p.title)}</b></td><td><span class="rag ${esc(p.rag)}"></span>${ragLbl[p.rag || '']}</td><td>${esc(p.goal) || '<i>brak</i>'}</td><td>${esc([p.kpi, p.baseline].filter(Boolean).join(': ')) || '<i>brak</i>'}</td><td>${ludzie(teamOf(p)) || '—'}${stakeOf(p).length ? `<br><span class="sub">${ludzie(stakeOf(p))}</span>` : ''}</td><td>${formatDate(p.start)}<br>${formatDate(TERM.lastDay(p.end))}</td><td>${delayDays(p) > 0 ? `<b style="color:#AE3F37">+${delayDays(p)} dni</b>` : '—'}</td><td>${esc(p.impediments) || '—'}</td></tr>`).join('') || '<tr><td colspan="8">Brak projektów w tym oknie.</td></tr>'}
+    ${obeyaRows.map(p => `<tr><td><b>${esc(p.title)}</b></td><td><span class="rag ${esc(p.rag)}"></span>${ragLbl[p.rag || '']}</td><td>${esc(p.goal) || '<i>brak</i>'}</td><td>${esc([p.kpi, p.baseline].filter(Boolean).join(': ')) || '<i>brak</i>'}</td><td>${ludzie(teamOf(p)) || '—'}${stakeOf(p).length ? `<br><span class="sub">${ludzie(stakeOf(p))}</span>` : ''}</td><td>${formatDate(p.start)}<br>${formatDate(TERM.lastDay(p.end))}</td><td>${delayDays(p) > 0 ? `<b style="color:#AE3F37">+${delayDays(p)} dni</b>` : '—'}</td><td>${esc(p.impediments) || '—'}</td></tr>`).join('') || '<tr><td colspan="8">Brak projektów w tym oknie.</td></tr>'}
     </table>
   </div>
 </div>
@@ -257,5 +257,5 @@ f('importPlik').addEventListener('change', async (e) => {
   } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
 });
 
-// ===== KONIEC js-portfel (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-portfel@2026-11-06f');
+// ===== KONIEC js-portfel (wersja 2026-11-06j) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06j');
