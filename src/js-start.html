@@ -3,7 +3,7 @@
 
 // START — wczytanie planu z Arkusza i pierwszy render
 // Kontrola wklejenia: każdy plik zgłasza się na końcu swoją wersją. Brak/inna wersja = plik do ponownego wklejenia.
-const PLANER_VERSION = '2026-11-06';   // wersja serwera (Code, PlanLib)
+const PLANER_VERSION = '2026-11-06i';   // wersja serwera (Code, PlanLib)
 const PLANER_FILES = { 'js-sesja': '2026-11-06c', 'js-model': '2026-11-06f', 'js-os': '2026-11-06f', 'js-karta': '2026-11-06f', 'js-portfel': '2026-11-06f', 'js-historia': '2026-11-06c', 'js-miary': '2026-11-06f', 'js-testy': '2026-11-06f' };
 function checkParts() {
   const got = new Set(window.__planerParts);

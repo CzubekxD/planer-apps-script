@@ -5,9 +5,13 @@
  * Serwer używa PLAN_LIB bezpośrednio, a Index.html wkleja tę samą funkcję do przeglądarki (planLibSource).
  * Zmieniasz tylko tutaj. Testy: adres web appa + ?test.
  */
-const PLAN_LIB_VERSION = '2026-11-06';
+const PLAN_LIB_VERSION = '2026-11-06i';
 function PLAN_LIB_FACTORY() {
   const fmtISO = s => s ? `${s.slice(8, 10)}.${s.slice(5, 7)}` : '—';
+  // ŚWIADOME ODSTĘPSTWO od TERM (js-model): koniec w danych jest wyłączny, a w opisie zmian pokazujemy ostatni dzień.
+  // To samo robi TERM.lastDay, ale PlanLib musi działać na serwerze (bez DATE_LIB, bez DOM) i jest wklejany do
+  // przeglądarki jako tekst, więc nie może zależeć od js-model. Liczy na tekście RRRR-MM-DD w UTC (bez stref czasowych
+  // i zmiany czasu). Test w tests/server.test.js pilnuje zgodności z TERM.lastDay i że to jedyne takie miejsce w .gs.
   const endIncl = s => { if (!s) return null; const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10); }; // bez stref czasowych
   const term = p => `${fmtISO(p.start)}–${fmtISO(endIncl(p.end))}`;
   const STATUS = { planned: 'planowany', ongoing: 'w trakcie', done: 'zakończony' };
