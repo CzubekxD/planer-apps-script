@@ -99,6 +99,7 @@ Stary format `{ projects: [...] }` (bez zakładek) jest czytany jako jedna zakł
 ### 4.3 Daty
 - Daty w danych to lokalne `RRRR-MM-DD`, bez stref czasowych. Cała logika dat siedzi w `DATE_LIB` (js-model) z testami.
 - **[Z-19]** Termin `[start, end)`: koniec w danych jest wyłączny, a na ekranie i w dacie zakończenia jest ostatni dzień. Zamianę robi tylko `TERM` (js-model): ostatni dzień, koniec, koniec o danej długości, długość, etykieta „od – do”, zawieranie dnia, nakładanie. W `js-*` nie ma ręcznych „±1 dzień” przy końcu terminu (PlanLib ma własne `endIncl` — świadome odstępstwo: ta sama zamiana na tekście daty w UTC, bo PlanLib działa też na serwerze i jest wklejany do przeglądarki bez `js-model`. Test w `server.test.js` porównuje `endIncl` z `TERM.lastDay` na granicach — koniec miesiąca i roku, luty przestępny, jednodniowy, zmiana czasu w kilku strefach — i pilnuje, że w `PlanLib.gs` i `Code.gs` nie ma żadnej innej arytmetyki dat).
+- **[Z-20]** KPI w portfelu rozdziela opóźnienia: „Opóźnione” liczy tylko projekty w trakcie dziś (po końcu planu pierwotnego), a osobny kafel „Zakończone z opóźnieniem (90 dni)” — projekty zakończone w ostatnich 90 dniach (razem z dzisiejszym), których opóźnienie > 0. Decyzje w portfelu dotyczą tylko otwartych projektów, bez zmian.
 - **[Z-7]** Nieistniejąca data (30 lutego) jest odrzucana, a nie przesuwana na 2 marca. Różnice dni są poprawne przez zmianę czasu (doby 23 h / 25 h). Tygodnie liczone wg ISO.
 
 ## 5. Serwer (API dla `google.script.run`)
@@ -171,3 +172,4 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-17 cykl życia projektu | js-testy (sekcja „cykl”, w tym niezmienniki przy wczytaniu); e2e: `karta: „Nowy plan pierwotny”…`, `karta: edytor karty…` |
 | Z-18 stan projektu w okresie | js-testy (sekcja „stan”: jeden portfel, cztery widoki); e2e: `portfel: heatmapa liczy tylko w trakcie…` |
 | Z-19 termin z wyłącznym końcem | js-testy (sekcja „termin”); server: `termin: poza TERM i DATE_LIB…` (skan kodu: każde `addDays(…, ±1)`, `diffDays(…) ± 1`, `getDate() ± 1`) |
+| Z-20 KPI opóźnień: w trakcie vs zakończone | js-testy (sekcja „stan”: `KPI: „Zakończone z opóźnieniem”…`) |

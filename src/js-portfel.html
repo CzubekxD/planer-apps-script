@@ -74,6 +74,7 @@ function computeKpi(decisions, projects = AppState.projects, today = startOfToda
   const valid = projects.filter(hasDates);
   const ongoing = projectsOngoingOn(valid, today);   // w trakcie dziś (także po terminie z karty); planowany po dacie startu się nie liczy
   const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
+  const doneLate = valid.filter(p => p.status === 'done' && p.doneAt && p.doneAt > addDays(today, -90) && p.doneAt <= today && delayDays(p) > 0);   // zakończone w ostatnich 90 dniach (razem z dzisiejszym) po końcu planu pierwotnego
   const load = computeLoad(months, projects, today);
   return {
     ongoing: ongoing.length,
@@ -81,6 +82,7 @@ function computeKpi(decisions, projects = AppState.projects, today = startOfToda
     red: ongoing.filter(p => p.rag === 'red').length,
     amber: ongoing.filter(p => p.rag === 'amber').length,
     delayed: ongoing.filter(p => delayDays(p) > 0).length,
+    doneLate: doneLate.length,
     overloaded: load.filter(r => r.counts[0] > AppState.wipLimit).length,
     critical: decisions.filter(d => d.prio === 1).length
   };
@@ -94,6 +96,7 @@ function renderPortfolio() {
     ['W trakcie dziś', k.ongoing, false],
     ['Start w 90 dni', k.next90, false],
     ['Opóźnione', k.delayed, k.delayed > 0],
+    ['Zakończone z opóźnieniem (90 dni)', k.doneLate, false],
     ['Czerwone / żółte', `${k.red} / ${k.amber}`, k.red > 0],
     ['Przeciążone osoby', k.overloaded, k.overloaded > 0],
     ['Decyzje pilne', k.critical, k.critical > 0]
@@ -257,5 +260,5 @@ f('importPlik').addEventListener('change', async (e) => {
   } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
 });
 
-// ===== KONIEC js-portfel (wersja 2026-11-06j) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-portfel@2026-11-06j');
+// ===== KONIEC js-portfel (wersja 2026-11-06k) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06k');
