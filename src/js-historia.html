@@ -18,7 +18,9 @@ function setJako(email) {
   Preview.as = email || '';
   Perm.user = Preview.as || Perm.realUser;
   setReadOnly(!!Preview.as);
-  if (!Preview.as) { loaded = false; return load(renderAll); }   // wyjście z podglądu = świeży stan z Arkusza
+  // Wyjście z podglądu = świeży stan z Arkusza; po błędzie zapisu zostaje ekran (niezapisane zmiany), bez wczytywania
+  if (!Preview.as && !(session && session.stopped())) { loaded = false; return load(renderAll); }
+  if (!Preview.as) { renderAll(); return; }
   renderAll();
   statusEl.textContent = `Podgląd jako ${Preview.as} — zmiany nie są zapisywane`;
 }
@@ -28,7 +30,7 @@ f('jakoWybor').addEventListener('change', e => setJako(e.target.value));
 const fmtTs = ts => { const d = new Date(ts); return `${formatDate(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 function drawHistory(entries) {
   const box = f('historiaLista');
-  if (!entries.length) { box.innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Brak wpisów — dziennik zacznie się od następnego zapisu.</div><div></div></div>'; return; }
+  if (!entries.length) { box.innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Brak wpisów — Historia zacznie się od następnego zapisu.</div><div></div></div>'; return; }
   box.innerHTML = '';
   [...entries].reverse().forEach((e, ri) => {
     const i = entries.length - 1 - ri;
@@ -50,7 +52,7 @@ function drawHistory(entries) {
 }
 function openHistory() {
   f('historiaOpis').textContent = Perm.isOwner
-    ? 'Kto, kiedy i co zmienił — każdy zapis to osobny wpis. „Cofnij do stanu sprzed” przywraca cały plan; samo cofnięcie też trafia do dziennika, więc można je odkręcić.'
+    ? 'Kto, kiedy i co zmienił — każdy zapis to osobny wpis. „Cofnij do stanu sprzed” przywraca cały plan; samo przywrócenie też trafia do Historii, więc można je odkręcić.'
     : 'Kto, kiedy i co zmienił. Cofać zmiany może właściciel planu.';
   f('historiaModal').classList.add('active');
   if (!GAS) { f('historiaLista').innerHTML = '<div class="hist-wpis"><div></div><div class="tekst-pomocniczy">Historia działa w web appie (zapisuje ją Code.gs).</div><div></div></div>'; return; }
@@ -60,7 +62,8 @@ function openHistory() {
      .listHistory();
 }
 function restoreEntry(entry, laterCount) {
-  if (!confirm(`Przywrócić cały plan do stanu z ${fmtTs(entry.ts)}?\n\nCofniesz ${laterCount} ${laterCount === 1 ? 'późniejszą zmianę' : 'późniejszych zmian'} (wszystkich osób). Wpisy zostają w dzienniku, więc możesz do nich wrócić.`)) return;
+  if (!session) return;
+  if (!confirm(`Przywrócić cały plan do stanu z ${fmtTs(entry.ts)}?\n\nCofniesz ${laterCount} ${laterCount === 1 ? 'późniejszą zmianę' : 'późniejszych zmian'} (wszystkich osób). Wpisy zostają w Historii, więc możesz do nich wrócić.`)) return;
   // Sesja czeka, aż skończą się zapisy w toku, i dopiero wtedy podmienia plan (bez fałszywego konfliktu po przywróceniu)
   session.restore(entry.id).then(() => {
     closeHistory();

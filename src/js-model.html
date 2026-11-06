@@ -431,17 +431,18 @@ function saveLocal() {
 // ZAPIS DO ARKUSZA: cała logika (kolejka, konflikty, przywrócenie) jest w js-sesja.
 // Tu tylko podpinamy sesję do ekranu i do google.script.run.
 const gasCall = (name, ...args) => new Promise((ok, fail) => GAS.withSuccessHandler(ok).withFailureHandler(fail)[name](...args));
+const canSaveNow = () => loaded && canEditAny() && !Preview.as;
 const session = GAS ? createPlanSession({
   server: { load: () => gasCall('loadPlan'), save: (plan, version) => gasCall('savePlan', plan, version), restore: id => gasCall('restoreVersion', id) },
   readPlan: serialize,
   applyPlan: plan => { const tab = AppState.activeTab; quiet(() => applyData({ ...plan, activeTab: tab })); },
   normalize: normSer,
-  canSave: () => loaded && canEditAny() && !Preview.as,
+  canSave: canSaveNow,
   report: { status: t => { statusEl.textContent = t; }, alarm }
 }) : null;
 // Wołane po każdej zmianie (renderAll kończy się save()). Sesja sama pomija render bez zmian.
 function save() {
-  if (!loaded || !canEditAny() || Preview.as) return;
+  if (!canSaveNow()) return;
   saveLocal();
   if (!session) { statusEl.textContent = `Zapisano lokalnie ${hhmm()}`; return; }
   if (!session.available()) { statusEl.textContent = 'Arkusz niedostępny – zapis tylko lokalny'; return; }

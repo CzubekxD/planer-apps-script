@@ -160,8 +160,8 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-9 kolejka zapisów | sesja: `szybkie zmiany…`, `zmiana cofnięta…`; e2e: `wyścig zapisów…` |
 | Z-10 scalanie | sesja: `konflikt z inną kartą…`, `edytor karty…`; e2e: `dwie karty…` (×2); js-testy (sekcja „scalanie”) |
 | Z-11 brak Arkusza | server: `Arkusz niedostępny…`; sesja: `błąd Arkusza…`, `Arkusz niedostępny…`; e2e: `brak Arkusza…` |
-| Z-16 przywrócenie w trakcie zapisu | sesja: `przywrócenie w trakcie zapisu…`, `render bez zmian…`; e2e: `przywrócenie z Historii w trakcie zapisu…` |
 | Z-12 kontrola wklejenia | server: `kontrola wklejenia…`, `doGet skleja…`; e2e: `ucięty plik…`, `stary Code.gs…` |
 | Z-13 testy w przeglądarce | e2e: `start: wszystkie testy w przeglądarce OK…` |
 | Z-14 opóźnienie | js-testy (sekcja „opóźnienie”) |
 | Z-15 wykres statusów | js-testy (sekcja „Miary”); e2e: `Miary: wykres wg statusu…` |
+| Z-16 przywrócenie w trakcie zapisu | sesja: `przywrócenie w trakcie zapisu…`, `render bez zmian…`; e2e: `przywrócenie z Historii w trakcie zapisu…` |

@@ -6,7 +6,7 @@ Aktualna paczka: **2026-11-06c**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
-| 06.11 | Zapis | Cały zapis do Arkusza w nowym pliku js-sesja (#3). Przywrócenie z Historii w trakcie zapisu czeka na zapis zamiast mieszać wersje; po zapisie edytora karty planer zna prawdziwy stan Arkusza; render bez zmian nie wysyła zapisu. **Nowy plik do dodania w edytorze: js-sesja.** | js-sesja (nowy), Index, js-model, js-historia, js-start |
+| 06.11 | Zapis | Cały zapis do Arkusza w nowym pliku js-sesja (#3). Przywrócenie z Historii w trakcie zapisu czeka na zapis zamiast mieszać wersje; po zapisie edytora karty planer zna prawdziwy stan Arkusza; render bez zmian nie wysyła zapisu; zmiana zrobiona w trakcie odświeżania albo przywracania nie ginie; po błędzie zapisu wyjście z „Podgląd jako” nie podmienia ekranu (status zawsze „ZAPIS NIEUDANY”). **Nowy plik do dodania w edytorze: js-sesja.** | js-sesja (nowy), Index, js-model, js-historia, js-start |
 | 06.11 | Miary | Zamiast wykresu „WIP portfela”: projekty wg statusu w miesiącach (12 wstecz + 3 do przodu) z przełącznikiem Stan w miesiącu / Przepływ; kafelek „Projekty w toku” bez czerwonego alarmu; w Miarach „zakończone” zamiast „zamknięte” (#1). | js-miary, Styles, js-testy, js-start |
 | 06.11 | Opóźnienie | Zakończony projekt liczy opóźnienie od faktycznej daty zakończenia, nie od końca na karcie (#2). | js-model, js-testy, js-start |
 | 06.11 | Porządki | Bez nazwy firmy w kodzie: tytuł „Planer”, nowy Arkusz „Planer – dane”, przykładowe e-maile @firma.pl, klucze przeglądarki `planer.*` (jednorazowo znikają zapamiętane: skala, „Od”, widok, metoda). Wersje wszystkich plików: 2026-11-06. Działanie bez zmian. | wszystkie poza Styles |

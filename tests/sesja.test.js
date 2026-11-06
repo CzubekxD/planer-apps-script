@@ -196,3 +196,93 @@ test('sesja: Arkusz niedostępny przy wczytaniu — load zgłasza błąd, zmiany
   assert.equal(s.srv.queue.length, 0);
   assert.equal(s.session.available(), false);
 });
+
+// --- ścieżki znalezione w przeglądzie #3 ---
+test('sesja: zmiana w trakcie odświeżania po pominięciu (edytor) nie ginie', async () => {
+  const gas = createGas();
+  gas.call('savePlan', [plan(proj('a', 'Jana', { editors: [EDITOR] }), proj('b', 'Cudza')), null], OWNER);
+  const s = await opened(gas, { user: EDITOR });
+  s.edit(p => { p.tabs[0].projects[1].title = 'HACK'; });
+  await s.srv.respond('savePlan');                        // → ignored, idzie odświeżenie
+  s.edit(p => { p.tabs[0].projects[0].title = 'Jana v2'; });   // zmiana, zanim odświeżenie wróci
+  await s.srv.respond('loadPlan');
+  await s.srv.respond('savePlan');                        // ekran wciąż ma HACK → znowu pominięte → odświeżenie
+  await s.srv.respond('loadPlan');
+  await until(() => s.session.idle(), 'zapisu po odświeżeniu');
+  assert.deepEqual(titles(stored(gas)), ['Jana v2', 'Cudza']);
+  assert.deepEqual(titles(s.ui.plan), ['Jana v2', 'Cudza']);
+});
+
+test('sesja: po pominięciu i konflikcie baza scalania = prawdziwy Arkusz (cudze zmiany zostają)', async () => {
+  const gas = createGas();
+  gas.call('savePlan', [plan(proj('a', 'Jana', { editors: [EDITOR] }), proj('b', 'Cudza')), null], OWNER);
+  const s = await opened(gas, { user: EDITOR });
+  s.edit(p => { p.tabs[0].projects[1].title = 'HACK'; });
+  await until(() => s.srv.queue.length === 1, 'zapisu');
+  s.edit(p => { p.tabs[0].projects[0].title = 'Jana v2'; });   // czeka w kolejce
+  await new Promise(r => setTimeout(r, 5));
+  await s.srv.respond('savePlan');                        // → ignored
+  gas.call('savePlan', [plan(proj('a', 'Jana', { editors: [EDITOR] }), proj('b', 'Cudza'), proj('c', 'Nowa właściciela')), gas.call('loadPlan').version], OWNER);   // właściciel dodaje projekt w międzyczasie
+  for (let i = 0; i < 6 && !s.session.idle(); i++) await s.srv.respond();
+  await until(() => s.session.idle(), 'końca');
+  assert.deepEqual(titles(stored(gas)), ['Jana v2', 'Cudza', 'Nowa właściciela']);
+});
+
+test('sesja: zmiana w trakcie przywracania — po nieudanym przywróceniu zapisuje się, po udanym sesja nie wisi', async () => {
+  const gas = createGas();
+  gas.call('savePlan', [plan(proj('a', 'v1')), null], OWNER);
+  const s = await opened(gas);
+  const r1 = s.session.restore('nie-ma-takiego').catch(e => e);
+  await until(() => s.srv.queue.length === 1, 'przywracania');
+  s.edit(p => { p.tabs[0].projects[0].title = 'v1 zmiana'; });
+  await new Promise(r => setTimeout(r, 5));
+  await s.srv.respond('restoreVersion');                  // → błąd
+  assert.match(String((await r1).message), /Nie znaleziono/);
+  await s.srv.respond('savePlan');
+  await until(() => s.session.idle(), 'zapisu po nieudanym przywróceniu');
+  assert.deepEqual(titles(stored(gas)), ['v1 zmiana']);
+  const first = gas.call('listHistory')[0].id;
+  const r2 = s.session.restore(first);
+  await until(() => s.srv.queue.length === 1, 'przywracania 2');
+  s.edit(p => { p.tabs[0].projects[0].title = 'zginie, bo przywracamy cały plan'; });
+  await new Promise(r => setTimeout(r, 5));
+  await s.srv.respond('restoreVersion');
+  await r2;
+  await until(() => s.session.idle(), 'spokoju po przywróceniu');
+  assert.deepEqual(titles(s.ui.plan), ['v1']);
+});
+
+test('sesja: po błędzie zapisu ponowne wczytanie (wyjście z podglądu) nie podmienia ekranu ani nie wznawia zapisów', async () => {
+  const gas = createGas();
+  gas.call('savePlan', [plan(proj('a', 'A')), null], OWNER);
+  const s = await opened(gas);
+  gas.breakSheet();
+  s.edit(p => { p.tabs[0].projects[0].title = 'niezapisane'; });
+  await s.srv.respond('savePlan');
+  gas.breakSheet(false);
+  await assert.rejects(s.session.load(), /wstrzymany/);
+  assert.equal(s.srv.queue.length, 0, 'nie pyta Arkusza');
+  assert.deepEqual(titles(s.ui.plan), ['niezapisane']);
+  assert.equal(s.session.stopped(), true);
+});
+
+test('sesja: wczytanie w trakcie zapisu czeka na jego koniec (bez mieszania wersji)', async () => {
+  const gas = createGas();
+  gas.call('savePlan', [plan(proj('a', 'A')), null], OWNER);
+  const s = await opened(gas);
+  s.edit(p => { p.tabs[0].projects[0].title = 'A1'; });
+  await until(() => s.srv.queue.length === 1, 'zapisu');
+  const l = s.session.load();
+  await tick();
+  assert.equal(s.srv.queue.length, 1, 'wczytanie czeka');
+  await s.srv.respond('savePlan');
+  await s.srv.respond('loadPlan');
+  const res = await l;
+  assert.equal(res.version, 2);
+  s.ui.plan = clone(res.data);
+  s.edit(p => { p.tabs[0].projects[0].title = 'A2'; });
+  await s.srv.respond('savePlan');
+  await until(() => s.session.idle(), 'zapisu');
+  assert.equal(s.srv.queue.length, 0, 'bez konfliktu');
+  assert.deepEqual(titles(stored(gas)), ['A2']);
+});

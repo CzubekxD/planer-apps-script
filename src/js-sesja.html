@@ -3,11 +3,12 @@
 // Nie zna ekranu ani google.script.run: dostaje je z zewnątrz (createPlanSession), dzięki czemu testy sterują nim w Node.
 
 // 1. SESJA PLANU — jedyne miejsce, które wie o wersji planu, kolejce zapisów i scalaniu.
-// Zasady (SPEC Z-9, Z-10, Z-11):
+// Zasady (SPEC Z-9, Z-10, Z-11, Z-16):
 //  • w locie jest najwyżej jeden zapis; kolejny wychodzi po odpowiedzi, z nową wersją,
 //  • konflikt (ktoś zapisał w międzyczasie) → pobierz Arkusz, scal projekt po projekcie (mergePlans), zapisz wynik,
 //  • przywrócenie z Historii czeka, aż skończą się zapisy w toku, i dopiero wtedy podmienia plan,
-//  • błąd zapisu → alarm i stop, nic więcej nie idzie „w próżnię”.
+//  • błąd zapisu → alarm i stop, nic więcej nie idzie „w próżnię”; ekranu (niezapisanych zmian) już nie podmieniamy,
+//  • po zapisie z pominiętymi zmianami (edytor karty) najpierw poznajemy prawdziwy Arkusz, dopiero potem wysyłamy dalej.
 //
 // createPlanSession({ server, readPlan, applyPlan, normalize, canSave, report, delay })
 //   server     adapter Arkusza: load() → {data, version, …}, save(plan, version) → {version, ignored} | {conflict}, restore(id) → {data, version} | {error}
@@ -16,7 +17,7 @@
 //   normalize  (plan) → postać porównywalna (bez otwartej zakładki itp.)
 //   canSave    () → czy ta osoba w tym trybie może teraz zapisywać
 //   report     { status(tekst), alarm(tekst) }
-// Zwraca: load(), changed(), restore(id), idle(), available(), version()
+// Zwraca: load(), changed(), restore(id), idle(), available(), stopped()
 function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, report, delay = 800 }) {
   const J = JSON.stringify;
   const hhmm = () => { const t = new Date(); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
@@ -34,10 +35,12 @@ function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, re
   const adopt = (data, v) => { version = v ?? null; base = normalize(data); synced = J(base); };
   const fail = msg => { stopped = true; inFlight = false; pending = false; report.status('ZAPIS NIEUDANY'); report.alarm(msg); wake(); };
 
+  // Wczytanie (start i wyjście z podglądu): czeka na zapisy w toku; po błędzie zapisu odmawia, żeby nie nadpisać ekranu
   function load() {
-    return server.load().then(res => {
+    if (stopped) return Promise.reject(new Error('Zapis wstrzymany po błędzie — zrób Eksport i odśwież stronę.'));
+    return whenIdle().then(() => server.load()).then(res => {
       res = res || {};
-      ok = true; stopped = false;
+      ok = true;
       adopt(res.data, res.version);
       return res;
     }, err => { ok = false; throw err; });
@@ -57,7 +60,7 @@ function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, re
     if (inFlight) { pending = true; return; }
     pending = false;
     const payload = readPlan(), sent = J(normalize(payload));
-    if (sent === synced) { report.status(`Zapisano w Arkuszu ${hhmm()}`); return wake(); }   // to już poszło (np. zmiana cofnięta przed zapisem)
+    if (sent === synced) { retries = 0; report.status(`Zapisano w Arkuszu ${hhmm()}`); return wake(); }   // to już poszło (np. zmiana cofnięta przed zapisem)
     inFlight = true; synced = sent;
     server.save(payload, version).then(res => {
       inFlight = false;
@@ -66,10 +69,9 @@ function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, re
       if (res.conflict) return resolveConflict();
       if (res.version != null) version = res.version;
       retries = 0;
-      if (res.ignored) base = null;                          // serwer odrzucił część zmian: nie wiemy, co ma Arkusz
-      else base = JSON.parse(sent);
+      if (res.ignored) return refresh();                     // serwer odrzucił część zmian: najpierw poznaj prawdziwy Arkusz
+      base = JSON.parse(sent);
       if (pending) return flush();                           // w międzyczasie były kolejne zmiany — wyślij je teraz
-      if (res.ignored) return refresh();
       report.status(`Zapisano w Arkuszu ${hhmm()}`);
       wake();
     }, err => fail(`Ostatnia zmiana NIE zapisała się w Arkuszu (${err && err.message || err}). Twoje zmiany są w kopii w tej przeglądarce — nie zamykaj karty, przyślij ten komunikat.`));
@@ -91,13 +93,15 @@ function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, re
     }, err => fail(`Nie mogę pobrać planu do scalenia (${err && err.message || err}). Nie zamykaj karty, przyślij komunikat.`));
   }
 
-  // Po zapisie z pominiętymi zmianami (edytor karty): pokaż prawdziwy stan Arkusza
+  // Po zapisie z pominiętymi zmianami (edytor karty): poznaj prawdziwy Arkusz. Bez nowych zmian — pokaż go;
+  // z nowymi zmianami (kolejka albo odliczanie) — zostaw ekran i wyślij je na tej bazie (serwer i tak przyjmie tylko Twoje karty).
   function refresh() {
     inFlight = true;
     server.load().then(res => {
       inFlight = false;
-      if (pending) return flush();
       adopt(res && res.data, res && res.version);
+      if (pending) return flush();
+      if (timer) return;                                     // odliczanie do zapisu trwa — zapis sam wyjdzie
       applyPlan(base);
       report.status(`Zapisano ${hhmm()} – zmiany poza Twoimi kartami pominięte`);
       wake();
@@ -110,18 +114,22 @@ function createPlanSession({ server, readPlan, applyPlan, normalize, canSave, re
     if (timer) { timer = null; flush(); }
     return whenIdle().then(() => {
       inFlight = true;
+      // Nieudane przywrócenie: zmiany zrobione w międzyczasie idą do zapisu jak zwykle.
+      // Udane: cały plan zostaje podmieniony (także zmiany z tych sekund) — tak działa przywrócenie; sesja wraca do zapisywania.
+      const afterFail = err => { inFlight = false; if (pending) flush(); else wake(); throw err; };
       return server.restore(id).then(res => {
-        inFlight = false;
-        if (!res || !res.data) { wake(); throw new Error((res && res.error) || 'Nie udało się przywrócić.'); }
+        if (!res || !res.data) return afterFail(new Error((res && res.error) || 'Nie udało się przywrócić.'));
+        inFlight = false; pending = false; clearTimeout(timer); timer = null;
+        stopped = false; retries = 0;
         adopt(res.data, res.version);
         applyPlan(res.data);
         wake();
         return res;
-      }, err => { inFlight = false; wake(); throw err; });
+      }, afterFail);
     });
   }
 
-  return { load, changed, restore, idle: isIdle, available: () => ok, version: () => version };
+  return { load, changed, restore, idle: isIdle, available: () => ok, stopped: () => stopped };
 }
 
 // Scalanie trójstronne (base = to, co Arkusz miał przy naszym ostatnim zapisie; mine = nasz stan; theirs = Arkusz teraz).
