@@ -202,6 +202,20 @@ test('stan: projekt po terminie z karty — „Opóźnione” i decyzja „Opó�
   const dec = computeDecisions(ps, SO_DZIS, SO_MIES);
   eq([computeKpi(dec, ps, SO_DZIS, SO_MIES.slice(0, 1)).delayed, dec.filter(d => d.typ === 'Opóźnienie').length], [1, 1]);
 });
+test('KPI: „Zakończone z opóźnieniem” = zakończone w ostatnich 90 dniach po końcu planu pierwotnego; „Opóźnione” zostaje tylko dla w trakcie', () => {
+  const zak = (title, doneAt, baselineEnd, extra = {}) => SO('done', 'Jan', { title, start: '2026-06-01', end: '2026-12-01', startedAt: '2026-06-01', baselineStart: '2026-06-01', baselineEnd, doneAt, ...extra });
+  const ps = [
+    zak('późno', '2026-11-10', '2026-11-01'),           // po planie, w oknie → liczy się
+    zak('w terminie', '2026-11-10', '2026-11-20'),      // przed planem → nie
+    zak('dokładnie w plan', '2026-11-10', '2026-11-11'), // ostatni dzień planu = dzień zakończenia → 0 dni → nie
+    zak('stare', '2026-08-01', '2026-07-01'),           // 106 dni temu → poza oknem
+    zak('granica okna', '2026-08-18', '2026-08-01'),    // pierwszy dzień okna (90 dni razem z dzisiejszym: 18.08–15.11) → liczy się
+    zak('tuż za oknem', '2026-08-17', '2026-08-01'),    // dzień przed oknem → poza
+    SO('ongoing', 'Jan', { title: 'w trakcie po terminie', start: '2026-09-01', end: '2026-11-01', startedAt: '2026-09-01', baselineStart: '2026-09-01', baselineEnd: '2026-10-20' })
+  ];
+  const k = computeKpi(computeDecisions(ps, SO_DZIS, SO_MIES), ps, SO_DZIS, SO_MIES.slice(0, 1));
+  eq([k.doneLate, k.delayed], [2, 1]);
+});
 test('stan: planowany z terminem z karty w przeszłości zostaje „+N” w bieżącym i przyszłych miesiącach (jak w Miarach)', () =>
   eq(computeLoad(SO_MIES, [SO('planned', 'Jan', { title: 'Stary plan', start: '2026-10-01', end: '2026-11-05' })], SO_DZIS).map(r => `${r.counts}|${r.planned}`), ['0,0|1,1']));
 test('stan: czas realizacji = od zobowiązania do zakończenia, włącznie', () => eq([leadTime(SO_PORTFEL()[2]), leadTime(SO_PORTFEL()[0])], [27, null]));
@@ -273,5 +287,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06j) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06j');
+// ===== KONIEC js-testy (wersja 2026-11-06k) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06k');
