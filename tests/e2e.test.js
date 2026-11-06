@@ -75,12 +75,28 @@ test('edytor karty: widzi ołówek tylko na swojej karcie, zapis innych kart jes
   const gas = createGas();
   seed(gas, proj('a', 'Karta Jana', { editors: [EDITOR] }), proj('b', 'Cudza'));
   const page = await openPlaner(gas, { user: EDITOR });
-  assert.deepEqual(await page.evaluate(() => [Perm.isOwner, canEditAny()]), [false, true]);
+  assert.deepEqual(await page.evaluate(() => [Perm.canManage(), Perm.canEditAny()]), [false, true]);
   assert.equal(await page.locator('.klocek.edytowalny').count(), 1);
   await rename(page, 'a', 'Karta Jana v2');
   await rename(page, 'b', 'Cudza HACK');
   await settle(page);
   assert.deepEqual(titles(gas), ['Cudza', 'Karta Jana v2']);
+  await page.close2();
+});
+
+test('„Podgląd jako”: właściciel widzi jak edytor karty, nic nie zapisuje, po wyjściu znów jest właścicielem', async () => {
+  const gas = createGas();
+  seed(gas, proj('a', 'Karta Jana', { editors: [EDITOR] }), proj('b', 'Cudza'));
+  const page = await openPlaner(gas, { user: OWNER });
+  const who = () => page.evaluate(() => [Perm.role(), Perm.canManage(), document.body.classList.contains('tylko-odczyt'), document.querySelectorAll('.klocek.edytowalny').length]);
+  assert.deepEqual(await who(), ['owner', true, false, 2]);
+  await page.selectOption('#jakoWybor', EDITOR);
+  assert.deepEqual(await who(), ['editor', false, true, 1]);
+  await rename(page, 'b', 'HACK'); await page.waitForTimeout(1200);
+  assert.deepEqual(titles(gas), ['Cudza', 'Karta Jana']);
+  await page.selectOption('#jakoWybor', '');
+  await settle(page);
+  assert.deepEqual(await who(), ['owner', true, false, 2]);
   await page.close2();
 });
 
@@ -102,7 +118,7 @@ test('brak Arkusza: czerwony pasek i blokada edycji', async () => {
   const page = await openPlaner(gas);
   assert.match(await alarmText(page), /Edycja jest zablokowana/);
   assert.equal(await page.evaluate(() => document.body.classList.contains('tylko-odczyt')), true);
-  assert.equal(await page.evaluate(() => canEditAny()), false);
+  assert.equal(await page.evaluate(() => Perm.canEditAny()), false);
   await page.close2();
 });
 
@@ -237,5 +253,74 @@ test('portfel: heatmapa liczy tylko w trakcie, planowane jako szare „+N”; �
   assert.ok(kpi.includes('W trakcie dziś=1'), kpi.join(' | '));
   const komorka = await page.locator('#heatWrap tbody tr').first().locator('td').nth(1).textContent();
   assert.equal(komorka, '1+1', 'bieżący miesiąc: 1 w trakcie, +1 planowany');
+  await page.close2();
+});
+
+// Przeciąganie kafla (SPEC §9): ramka „tu wyląduje” = miejsce po upuszczeniu; zakończony się nie rusza
+const dragKafel = async (page, id, dx, toY, during) => {
+  const box = await page.locator(`.klocek[data-id="${id}"]`).boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x + 10, y + 10, { steps: 2 });
+  // po ruszeniu pasy rosną o pusty wiersz, więc cel (toY jako funkcja) mierzymy dopiero teraz
+  const ty = typeof toY === 'function' ? await toY() : (toY ?? y);
+  await page.mouse.move(x + dx, ty, { steps: 5 });
+  const seen = during ? await during() : null;
+  await page.mouse.up();
+  return seen;
+};
+test('przeciąganie: do pasa innej osoby, nowy wiersz — ramka podglądu = miejsce po upuszczeniu, zapis w Arkuszu', async () => {
+  const gas = createGas();
+  seed(gas,
+    proj('a', 'Janowy', { start: '2026-12-01', end: '2027-01-01' }),
+    proj('e1', 'Ewy 1', { start: '2026-12-01', end: '2027-01-01', assignments: [{ group: 'team', role: 'Kupiec', person: 'Ewa' }] }));
+  const page = await openPlaner(gas);
+  await edit(page, () => { AppState.viewRole = 'Kupiec'; });
+  await settle(page);
+  // pas Ewy: wiersz 0 zajęty (Ewy 1) → celujemy w wiersz 1 (nowy, pusty) przesuwając kafel o tydzień
+  const ewaRow1 = async () => (await page.locator('.lane-track[data-person="Ewa"]').boundingBox()).y + 64 * 1.5;
+  const ghost = await dragKafel(page, 'a', 140, ewaRow1, () => page.evaluate(() => {
+    const g = document.querySelector('.drop-ghost'); return { person: g.parentElement.dataset.person, top: g.style.top, left: parseFloat(g.style.left) };
+  }));
+  assert.equal(ghost.person, 'Ewa');
+  await settle(page);
+  const after = await page.evaluate(() => { const k = document.querySelector('.klocek[data-id="a"]'); return { person: k.parentElement.dataset.person, top: k.style.top, left: parseFloat(k.style.left) }; });
+  assert.deepEqual(after, ghost, 'podgląd = wynik');
+  const a = gas.storedPlan().tabs[0].projects.find(p => p.id === 'a');
+  assert.deepEqual(a.assignments.map(x => x.person), ['Ewa']);
+  assert.notEqual(a.start, '2026-12-01', 'daty przesunięte');
+  assert.equal(a.rowHint, 1);
+  assert.deepEqual(page.errors, []);
+  await page.close2();
+});
+test('przeciąganie: wejście w zajęty wiersz spycha inny niżej, podgląd = wynik', async () => {
+  const gas = createGas();
+  seed(gas,
+    proj('a', 'Górny', { start: '2026-12-01', end: '2027-01-01', rowHint: 0 }),
+    proj('b', 'Dolny', { start: '2026-12-01', end: '2027-01-01', rowHint: 1 }));
+  const page = await openPlaner(gas);
+  await edit(page, () => { AppState.viewRole = 'Kupiec'; });
+  await settle(page);
+  const janRow0 = async () => (await page.locator('.lane-track[data-person="Jan"]').boundingBox()).y + 32;
+  const seen = await dragKafel(page, 'b', 0, janRow0, () => page.evaluate(() => ({ top: document.querySelector('.drop-ghost').style.top, tip: document.getElementById('tooltip') ? document.getElementById('tooltip').textContent : '' })));
+  await settle(page);
+  const tops = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.klocek')].map(k => [k.dataset.id, k.style.top])));
+  assert.equal(tops.b, seen.top);
+  assert.ok(parseFloat(tops.a) > parseFloat(tops.b), 'Górny zepchnięty niżej');
+  await page.close2();
+});
+test('przeciąganie: kafel zakończonego projektu się nie rusza (ani przesunięcie, ani rozciągnięcie)', async () => {
+  const gas = createGas();
+  seed(gas, proj('d', 'Zrobiony', { status: 'done', start: '2026-12-01', end: '2026-12-20', startedAt: '2026-11-01', doneAt: '2026-12-19' }));
+  const page = await openPlaner(gas);
+  await edit(page, () => { AppState.viewRole = 'Kupiec'; AppState.showDone = true; });
+  await settle(page);
+  assert.equal(await page.locator('.klocek[data-id="d"]').count(), 1, 'kafel zakończonego widoczny');
+  await dragKafel(page, 'd', 200);
+  const h = await page.locator('.klocek[data-id="d"] .resize-right').boundingBox();
+  if (h) { await page.mouse.move(h.x + 2, h.y + 5); await page.mouse.down(); await page.mouse.move(h.x + 200, h.y + 5, { steps: 5 }); await page.mouse.up(); }
+  await settle(page);
+  const d = gas.storedPlan().tabs[0].projects[0];
+  assert.deepEqual([d.start, d.end], ['2026-12-01', '2026-12-20']);
   await page.close2();
 });

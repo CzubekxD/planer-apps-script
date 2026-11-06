@@ -2,10 +2,12 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06f**
+Aktualna paczka: **2026-11-06h**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Uprawnienia | Jeden moduł `Perm` w przeglądarce (#8): rola z Arkusza (właściciel / edytor karty / obserwator) osobno od trybu „Podgląd jako” i od braku Arkusza; test każdej roli w każdym trybie. Działanie bez zmian; serwer nadal sam pilnuje uprawnień. | js-model, js-os, js-karta, js-historia, js-testy, js-start |
+| 06.11 | Oś | Przeciąganie kafla (#7): ramka „tu wyląduje” pokazuje dokładnie miejsce i daty po upuszczeniu (jeden moduł planMove liczy podgląd i zapis). Kafla zakończonego projektu nie da się przesunąć ani rozciągnąć — daty zmienia się na karcie. Nowe testy przeciągania w przeglądarce. | js-model, js-os, js-testy, js-start |
 | 06.11 | Daty | Porządki (#6): zamiana „ostatni dzień” ↔ „koniec terminu” tylko w jednym miejscu (TERM), test pilnuje, żeby nie wracały ręczne „−1 dzień”. Działanie bez zmian; daty na kaflu z półpauzą „–” jak wszędzie. | js-model, js-karta, js-miary, js-os, js-portfel, js-testy, js-start |
 | 06.11 | Portfel | Jedna definicja „w trakcie” dla heatmapy, limitu WIP, decyzji, KPI i Miar (#5). Limit WIP, „Przeciążenie” i kafelek „W trakcie dziś” (dawniej „Aktywne na osi”) liczą tylko projekty w trakcie; planowane na heatmapie jako szare „+N”. „Opóźnione”, decyzje i Obeya A3 widzą też projekty w trakcie po terminie z karty. | js-model, js-portfel, js-miary, js-os, js-testy, Index, Styles, js-start |
 | 06.11 | Karta projektu | Reguły statusu, zobowiązania i planu pierwotnego w jednym miejscu, z testem każdej zmiany statusu (#4). „Nowy plan pierwotny” wchodzi dopiero po Zapisz, Anuluj go wyrzuca, a okno pyta o niezapisane zmiany. | js-karta, js-model, js-testy, js-start |

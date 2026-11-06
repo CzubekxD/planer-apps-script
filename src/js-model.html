@@ -227,10 +227,31 @@ const hasDates = p => p.start && p.end;
 // To tylko interfejs. Prawdziwą blokadę robi savePlan w Code.gs.
 const parseEmails = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/))
   .map(x => String(x).trim().toLowerCase()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
-const Perm = { user: '', isOwner: true, realUser: '', realOwner: true };   // real* = kim jesteś naprawdę (Podgląd jako zmienia tylko user/isOwner)
-const canEditCard = p => Perm.isOwner || (!!Perm.user && !!p && (p.editors || []).includes(Perm.user));
+// Perm = kim jestem i co mogę, osobno od trybu. Trzy niezależne rzeczy:
+//  • rola z Arkusza: właściciel / edytor karty / obserwator (CONTEXT.md),
+//  • tryb „Podgląd jako” (właściciel widzi planer oczami innej osoby; nic się nie zapisuje),
+//  • brak Arkusza (edycja zablokowana dla wszystkich).
+// Reszta kodu pyta tylko: role(), canManage() (cały plan), canEditCard(p), canEditAny().
+const createPerm = cards => {   // cards() → wszystkie karty planu (do rozpoznania edytora)
+  const st = { user: '', owner: false, preview: '', offline: false };
+  const lower = v => String(v || '').toLowerCase();
+  const self = {
+    identify(user, isOwner) { st.user = lower(user); st.owner = !!isOwner; st.preview = ''; st.offline = false; },
+    goOffline() { st.user = ''; st.owner = false; st.preview = ''; st.offline = true; },
+    previewAs(email) { st.preview = st.owner && !st.offline ? lower(email) : ''; },   // tylko prawdziwy właściciel
+    get user() { return st.preview || st.user; },            // czyje oczy: podgląd albo ja
+    get realOwner() { return st.owner && !st.offline; },     // prawdziwy właściciel (niezależnie od podglądu)
+    get previewing() { return !!st.preview; },
+    get offline() { return st.offline; },
+    canManage() { return self.realOwner && !st.preview; },   // „może teraz zmieniać cały plan”
+    canEditCard(p) { return self.canManage() || (!st.offline && !!self.user && !!p && (p.editors || []).includes(self.user)); },
+    canEditAny() { return self.canManage() || (!st.offline && cards().some(p => self.canEditCard(p))); },
+    role() { return self.canManage() ? 'owner' : self.canEditAny() ? 'editor' : 'observer'; }
+  };
+  return self;
+};
 const projectsOf = t => t.id === AppState.activeTab ? AppState.projects : t.projects;
-const canEditAny = () => Perm.isOwner || AppState.tabs.some(t => projectsOf(t).some(canEditCard));
+const Perm = createPerm(() => AppState.tabs.flatMap(projectsOf));
 
 // PLAN_LIB (opis zmian + scalanie zapisu edytora) jest w PlanLib.gs — wstrzykuje go Index.html
 
@@ -327,10 +348,11 @@ function buildLanes() {
 }
 // Układ wierszy w pasie. Projekt z rowHint (ustawionym przeciągnięciem) idzie do swojego wiersza albo najbliższego wolnego niżej;
 // reszta wypełnia od góry. Puste wiersze są ściągane, więc rowHint działa jak „kolejność”, a nie sztywny numer.
-let lastDropped = null;   // ostatnio upuszczony klocek wygrywa swój wiersz
-function stack(items) {
+// winner = id klocka, który wygrywa swój wiersz przy remisie (ostatnio upuszczony).
+let lastDropped = null;   // ostatnio upuszczony klocek (render przekazuje go do stack jako winner)
+function stack(items, winner = null) {
   const hinted = items.filter(p => Number.isInteger(p.rowHint))
-    .sort((a, b) => (b.id === lastDropped) - (a.id === lastDropped) || a.rowHint - b.rowHint || a.start - b.start);
+    .sort((a, b) => (b.id === winner) - (a.id === winner) || a.rowHint - b.rowHint || a.start - b.start);
   const rest = items.filter(p => !Number.isInteger(p.rowHint)).sort((a, b) => a.start - b.start || a.end - b.end);
   const rows = [], raw = new Map();
   const fits = (r, p) => !(rows[r] || []).some(q => q.start < p.end && p.start < q.end);
@@ -350,6 +372,36 @@ function moveToLane(p, role, fromPerson, toPerson) {
   p.assignments = rest;
   return true;
 }
+// PRZESUNIĘCIE KAFLA — jedno źródło dla podglądu „tu wyląduje” i dla upuszczenia (podgląd = wynik).
+// m = { project, start (nowy start), laneItems (projekty pasa docelowego, jak w renderze), winner (obecny lastDropped),
+//       role, fromPerson, toPerson, otherLane (czy pas docelowy to inny pas), srcRow, row (null = bez ruchu w pionie) }
+// → { changes (pola projektu do nadpisania; {} = nic), row (wiersz po upuszczeniu), pushed (tytuły zepchniętych niżej), winner }
+function planMove(m) {
+  const p = m.project, changes = {};
+  const start = m.start, end = TERM.endFrom(start, TERM.days(p.start, p.end));
+  if (+start !== +p.start) { changes.start = start; changes.end = end; }
+  if (m.row != null) {
+    const tmp = { assignments: p.assignments.map(a => ({ ...a })) };
+    const laneChanged = !!m.otherLane && moveToLane(tmp, m.role, m.fromPerson, m.toPerson);
+    if (laneChanged) changes.assignments = tmp.assignments;
+    if (laneChanged || m.row !== m.srcRow) changes.rowHint = m.row;
+  }
+  const winner = 'rowHint' in changes ? p.id : m.winner;
+  const others = (m.laneItems || []).filter(x => x.id !== p.id);
+  const after = stack(others.concat([{ ...p, ...changes }]), winner);
+  const before = stack(m.laneItems || [], m.winner);
+  const pushed = others.filter(x => before.pos.has(x.id) && after.pos.get(x.id) > before.pos.get(x.id)).map(x => x.title);
+  return { changes, row: after.pos.get(p.id), pushed, winner };
+}
+// Upuszczenie: nadpisuje pola projektu i ustawia zwycięzcę wiersza. true = coś się zmieniło.
+function applyMove(p, plan) {
+  if (!Object.keys(plan.changes).length) return false;
+  Object.assign(p, plan.changes);
+  lastDropped = plan.winner;
+  return true;
+}
+// Kafla zakończonego projektu nie przesuwamy ani nie rozciągamy — daty zmienia się na karcie.
+const canDrag = p => p.status !== 'done';
 
 // 4. SERIALIZACJA I BAZA
 const curTab = () => AppState.tabs.find(t => t.id === AppState.activeTab) || AppState.tabs[0];
@@ -511,7 +563,7 @@ function saveLocal() {
 // ZAPIS DO ARKUSZA: cała logika (kolejka, konflikty, przywrócenie) jest w js-sesja.
 // Tu tylko podpinamy sesję do ekranu i do google.script.run.
 const gasCall = (name, ...args) => new Promise((ok, fail) => GAS.withSuccessHandler(ok).withFailureHandler(fail)[name](...args));
-const canSaveNow = () => loaded && canEditAny() && !Preview.as;
+const canSaveNow = () => loaded && Perm.canEditAny() && !Preview.as;
 const session = GAS ? createPlanSession({
   server: { load: () => gasCall('loadPlan'), save: (plan, version) => gasCall('savePlan', plan, version), restore: id => gasCall('restoreVersion', id) },
   readPlan: serialize,
@@ -556,15 +608,15 @@ function loadLocal() {
   } catch (err) { console.error(err); }
   return false;
 }
-function setReadOnly(ro) {
-  Perm.isOwner = !ro;
+function applyPerm() {   // pokazuje stan Perm w interfejsie (to tylko wygląd — blokadę robi serwer)
+  const ro = !Perm.canManage();
   document.body.classList.toggle('tylko-odczyt', ro);
-  if (ro) statusEl.textContent = canEditAny() ? 'Edytujesz tylko swoje karty' : 'Podgląd (tylko odczyt)';
+  if (ro) statusEl.textContent = Perm.canEditAny() ? 'Edytujesz tylko swoje karty' : 'Podgląd (tylko odczyt)';
 }
 function showWho() {
   const el = f('kimJestem');
   el.hidden = !GAS || !Perm.user;
-  el.textContent = `${Perm.user}${Perm.isOwner ? ' · właściciel' : ''}`;
+  el.textContent = `${Perm.user}${Perm.role() === 'owner' ? ' · właściciel' : ''}`;
 }
 function load(done) {
   if (!GAS) {
@@ -576,12 +628,11 @@ function load(done) {
   }
   statusEl.textContent = 'Wczytywanie z Arkusza…';
   session.load().then(res => {
-        Perm.user = Perm.realUser = String(res.user || '').toLowerCase();
-        Perm.realOwner = !!res.isOwner;
+        Perm.identify(res.user, res.isOwner);
         AppState.serverParts = res.parts || {};
         // Arkusz rządzi: pusty Arkusz = pusty plan (bez dociągania localStorage)
         applyData(hasPlan(res.data) ? res.data : { projects: [] });
-        setReadOnly(!res.isOwner);
+        applyPerm();
         showWho();
         loaded = true;
         if (res.isOwner) statusEl.textContent = `Wczytano ${hhmm()}`;
@@ -589,14 +640,14 @@ function load(done) {
       }, err => {
         // Bez Arkusza nie pokazujemy kopii z przeglądarki i blokujemy edycję — inaczej zmiany przepadają po cichu
         console.error(err);
-        Perm.realOwner = false;
+        Perm.goOffline();
         applyData({ projects: [] });
-        setReadOnly(true);
+        applyPerm();
         statusEl.textContent = 'Brak połączenia z Arkuszem';
         alarm(`Nie mogę wczytać planu z Arkusza (${err && err.message || err}). Edycja jest zablokowana, nic się nie zapisze. Odśwież stronę; jeśli to się powtarza, przyślij ten komunikat.`);
         done();
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06f');
+// ===== KONIEC js-model (wersja 2026-11-06h) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06h');

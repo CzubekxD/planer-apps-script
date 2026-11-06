@@ -171,7 +171,7 @@ function makeKlocek(p, lane, sub) {
   if (leftPx < 0) { widthPx = Math.max(AppState.minBlockWidth, widthPx + leftPx); leftPx = 0; }
 
   const klocek = document.createElement('div');
-  klocek.className = `klocek status-${p.status}` + (canEditCard(p) ? ' edytowalny' : '');
+  klocek.className = `klocek status-${p.status}` + (Perm.canEditCard(p) ? ' edytowalny' : '');
   paintPerson(klocek, lane.color || '');
   klocek.dataset.id = p.id;
   if (uciety) klocek.classList.add('uciety');
@@ -190,7 +190,7 @@ function makeKlocek(p, lane, sub) {
   titleEl.className = 'klocek-tytul';
   titleEl.textContent = p.title;
   if (p.status === 'done') { const ok = document.createElement('span'); ok.className = 'ptaszek'; ok.textContent = '✓'; linia.appendChild(ok); }
-  if (!Perm.isOwner && canEditCard(p)) { const o = document.createElement('span'); o.className = 'klocek-olowek'; o.textContent = '✎'; o.title = 'Możesz edytować tę kartę'; linia.appendChild(o); }
+  if (!Perm.canManage() && Perm.canEditCard(p)) { const o = document.createElement('span'); o.className = 'klocek-olowek'; o.textContent = '✎'; o.title = 'Możesz edytować tę kartę'; linia.appendChild(o); }
   linia.appendChild(titleEl);
 
   const datesEl = document.createElement('div');
@@ -206,7 +206,7 @@ function makeKlocek(p, lane, sub) {
   delBtn.title = 'Usuń projekt';
   delBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (!Perm.isOwner) return;
+    if (!Perm.canManage()) return;
     if (confirm(`Usunąć projekt "${p.title}"?`)) {
       AppState.projects = AppState.projects.filter(proj => proj.id !== p.id);
       renderAll();
@@ -225,7 +225,7 @@ function makeKlocek(p, lane, sub) {
   }
   // podwójne kliknięcie (otwarcie karty) obsługuje pointerdown niżej — tu nie dublujemy
   klocek.addEventListener('dblclick', (e) => e.stopPropagation());
-  klocek.addEventListener('click', (e) => { if (!canEditCard(p)) { e.stopPropagation(); openModal(p); } });
+  klocek.addEventListener('click', (e) => { if (!Perm.canEditCard(p)) { e.stopPropagation(); openModal(p); } });
 
   klocek.addEventListener('mouseenter', (e) => {
     if (dragState || drawState.active) return;
@@ -266,7 +266,7 @@ function renderLanes() {
   const legend = isAll ? (() => { const m = new Map(); lanes.filter(l => l.project).forEach(l => { const k = norm(l.color); if (!m.has(k)) m.set(k, { name: l.color, unassigned: !l.color, items: [] }); m.get(k).items.push(l); }); return [...m.values()].sort((a, b) => (a.unassigned - b.unassigned) || a.name.localeCompare(b.name, 'pl')); })() : null;
 
   lanes.forEach(lane => {
-    const { pos, rows } = stack(lane.items);
+    const { pos, rows } = stack(lane.items, lastDropped);
     const nRows = rows + (lane.unassigned && !isAll ? 1 : 0);   // dodatkowy wiersz do rysowania (w „Wszystko” wiersz rysowania jest osobny)
 
     const laneEl = document.createElement('div');
@@ -374,7 +374,7 @@ function renderTabs() {
       inp.value = t.title;
       inp.size = Math.max(4, t.title.length + 1);
       inp.title = 'Kliknij, aby zmienić nazwę';
-      inp.readOnly = !Perm.isOwner;
+      inp.readOnly = !Perm.canManage();
       inp.addEventListener('input', () => { inp.size = Math.max(4, inp.value.length + 1); });
       inp.addEventListener('change', () => { t.title = cleanName(inp.value) || 'Bez nazwy'; inp.value = t.title; save(); });
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
@@ -447,7 +447,7 @@ let drawState = { active: false };
 let tempCreateState = { start: null, end: null, person: '' };
 
 DOM.timelineBody.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || !Perm.isOwner || e.target.closest('.klocek')) return;
+  if (e.button !== 0 || !Perm.canManage() || e.target.closest('.klocek')) return;
   const track = e.target.closest('.lane-track');
   if (!track) return;
   e.preventDefault();
@@ -463,17 +463,18 @@ DOM.timelineBody.addEventListener('pointerdown', (e) => {
 });
 
 document.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || !canEditAny()) return;
+  if (e.button !== 0 || !Perm.canEditAny()) return;
   const target = e.target;
   const klocek = target.closest('.klocek');
   if (!klocek || target.classList.contains('klocek-delete')) return;
   e.preventDefault();
   const p = AppState.projects.find(x => x.id === klocek.dataset.id);
-  if (!p || !canEditCard(p)) return;
+  if (!p || !Perm.canEditCard(p)) return;
   // Podwójne kliknięcie rozpoznajemy sami (drugie wciśnięcie w ciągu 450 ms na tym samym kaflu) — odporne na drgnięcie myszy/touchpada
   const now = Date.now();
   if (lastPress.id === p.id && now - lastPress.t < 450) { lastPress = { id: null, t: 0 }; hideTooltip(); openModal(p); return; }
   lastPress = { id: p.id, t: now };
+  if (!canDrag(p)) return;   // zakończony: tylko karta
   const base = { project: p, startX: e.clientX, startY: e.clientY, hasMoved: false, el: klocek, origStartPx: dateToPx(p.start) };
   if (target.classList.contains('resize-handle')) {
     dragState = { ...base, type: target.classList.contains('resize-left') ? 'left' : 'right', origEndPx: dateToPx(p.end) };
@@ -502,24 +503,24 @@ function startFreeMove() {
 // Podgląd lądowania: liczymy układ pasa docelowego tak, jak policzy go render po upuszczeniu,
 // i rysujemy przerywaną ramkę dokładnie tam, gdzie kafel się znajdzie (z datami)
 let landingEl = null;
+function movePlan(t, leftPx) {
+  const d = dragState;
+  return planMove({ project: d.project, start: pxToDate(leftPx), laneItems: t ? (t.track._items || []) : [], winner: lastDropped,
+    role: AppState.viewRole, fromPerson: d.srcPerson, toPerson: t ? t.person : '', otherLane: !!t && t.track !== d.srcTrack,
+    srcRow: d.srcRow, row: t ? t.row : null });
+}
 function showLanding(t, leftPx) {
-  const p = dragState.project;
-  const start = pxToDate(leftPx), end = TERM.endFrom(start, dragState.durationDays);
-  const items = (t.track._items || []).filter(x => x.id !== p.id).concat([{ ...p, start, end, rowHint: t.row }]);
-  const keep = lastDropped; lastDropped = p.id;
-  const layout = stack(items);
-  lastDropped = keep;
-  const row = layout.pos.get(p.id);
-  // kto zejdzie niżej (porównanie z obecnym układem pasa)
-  const now = new Map([...t.track.querySelectorAll('.klocek')].map(k => [k.dataset.id, Math.round((parseFloat(k.style.top) - AppState.blockOffsetY) / AppState.rowHeight)]));
-  dragState.pushed = items.filter(x => x.id !== p.id && now.has(x.id) && layout.pos.get(x.id) > now.get(x.id)).map(x => x.title);
+  const plan = movePlan(t, leftPx);
+  const row = plan.row;
+  dragState.pushed = plan.pushed;
+  const start = plan.changes.start || dragState.project.start, end = plan.changes.end || dragState.project.end;
   if (!landingEl) { landingEl = document.createElement('div'); landingEl.className = 'drop-ghost'; }
   if (landingEl.parentElement !== t.track) {
     document.querySelectorAll('.lane-track.cel').forEach(x => x.classList.remove('cel'));
     t.track.classList.add('cel');
     t.track.appendChild(landingEl);
   }
-  landingEl.style.left = `${Math.max(0, leftPx)}px`;
+  landingEl.style.left = `${Math.max(0, dateToPx(start))}px`;   // ta sama data co po upuszczeniu
   landingEl.style.width = `${parseFloat(dragState.el.style.width)}px`;
   landingEl.style.top = `${row * AppState.rowHeight + AppState.blockOffsetY}px`;
   const daty = dragState.el.querySelector('.klocek-daty');
@@ -563,6 +564,7 @@ document.addEventListener('pointermove', (e) => {
     const newStartPx = Math.max(0, dragState.origStartPx + dx);
     dragState.el.style.left = `${newStartPx}px`;
     dragState.tempStart = pxToDate(newStartPx);
+    dragState.tempLeftPx = newStartPx;
     const lines = [TERM.label(dragState.tempStart, TERM.endFrom(dragState.tempStart, dragState.durationDays))];
     if (dragState.vertical) {
       const t = dropTarget(e.clientY);
@@ -604,11 +606,7 @@ document.addEventListener('pointerup', () => {
   let hasChanged = false;
   if (d.hasMoved) {
     if (d.type === 'move' && d.tempStart) {
-      if (+d.tempStart !== +p.start) { p.start = d.tempStart; p.end = TERM.endFrom(p.start, d.durationDays); hasChanged = true; }
-      if (d.target) {
-        const laneChanged = d.target.track !== d.srcTrack && moveToLane(p, AppState.viewRole, d.srcPerson, d.target.person);
-        if (laneChanged || d.target.row !== d.srcRow) { p.rowHint = d.target.row; lastDropped = p.id; hasChanged = true; }
-      }
+      hasChanged = applyMove(p, movePlan(d.target, d.tempLeftPx));
     } else if (d.type === 'right' && d.tempEnd) {
       p.end = d.tempEnd; hasChanged = true;
     } else if (d.type === 'left' && d.tempStart) {
@@ -631,5 +629,5 @@ function showTooltip(x, y, text) {
 }
 function hideTooltip() { DOM.tooltip.style.display = 'none'; }
 
-// ===== KONIEC js-os (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-os@2026-11-06f');
+// ===== KONIEC js-os (wersja 2026-11-06h) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-os@2026-11-06h');
