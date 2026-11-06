@@ -27,3 +27,17 @@ Web app Google Apps Script. Kod w `src/` wkleja do edytora Apps Script ręcznie 
 - `tests/browser.js`: `openPlaner(gas, { user, delay, query, html })` otwiera prawdziwy Index w Chromium. `google.script.run` idzie do atrapy z opóźnieniem `delay` ms, jak wolny Apps Script. `edit(page, fn)` zmienia `AppState` i woła `renderAll()`, czyli dokładnie tę ścieżkę zapisu, której używa UI. `settle(page)` czeka na koniec zapisów.
 - W tym środowisku Playwright jest preinstalowany globalnie: `NODE_PATH=$(npm root -g) npm test`, bez `npm install` i `playwright install`.
 - Brakuje jeszcze testu e2e przeciągania (nowy wiersz, pas innej osoby, ramka „tu wyląduje” = miejsce po upuszczeniu).
+
+## Agent skills
+
+### Issue tracker
+
+Zadania (poprawki, pomysły, porządki) są w GitHub Issues repo `CzubekxD/planer-apps-script`, obsługiwane przez `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Domyślne etykiety: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: jeden `CONTEXT.md` i `docs/adr/` w głównym folderze. See `docs/agents/domain.md`.
