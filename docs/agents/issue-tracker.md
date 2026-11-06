@@ -13,6 +13,19 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+### In Claude Code cloud sessions: REST only
+
+GraphQL is blocked there, so `gh issue …` / `gh label list` fail with HTTP 403. Use the REST equivalents (repo = `CzubekxD/planer-apps-script`):
+
+- Create: `gh api repos/CzubekxD/planer-apps-script/issues -f title="..." -f body="..." -f "labels[]=needs-triage"`
+- Read: `gh api repos/CzubekxD/planer-apps-script/issues/<n>` and `.../issues/<n>/comments`
+- List: `gh api "repos/CzubekxD/planer-apps-script/issues?state=open&labels=<label>&per_page=100"` (drop entries that have a `pull_request` key, because those are PRs)
+- Comment: `gh api repos/CzubekxD/planer-apps-script/issues/<n>/comments -f body="..."`
+- Labels: `gh api repos/CzubekxD/planer-apps-script/issues/<n>/labels -f "labels[]=..."` / `gh api -X DELETE repos/CzubekxD/planer-apps-script/issues/<n>/labels/<label>`
+- Close: comment first, then `gh api -X PATCH repos/CzubekxD/planer-apps-script/issues/<n> -f state=closed`
+
+Write issue titles and bodies in Polish (the owner reads them).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
