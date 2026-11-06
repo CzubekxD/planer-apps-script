@@ -327,10 +327,11 @@ function buildLanes() {
 }
 // Układ wierszy w pasie. Projekt z rowHint (ustawionym przeciągnięciem) idzie do swojego wiersza albo najbliższego wolnego niżej;
 // reszta wypełnia od góry. Puste wiersze są ściągane, więc rowHint działa jak „kolejność”, a nie sztywny numer.
-let lastDropped = null;   // ostatnio upuszczony klocek wygrywa swój wiersz
-function stack(items) {
+// winner = id klocka, który wygrywa swój wiersz przy remisie (ostatnio upuszczony).
+let lastDropped = null;   // ostatnio upuszczony klocek (render przekazuje go do stack jako winner)
+function stack(items, winner = null) {
   const hinted = items.filter(p => Number.isInteger(p.rowHint))
-    .sort((a, b) => (b.id === lastDropped) - (a.id === lastDropped) || a.rowHint - b.rowHint || a.start - b.start);
+    .sort((a, b) => (b.id === winner) - (a.id === winner) || a.rowHint - b.rowHint || a.start - b.start);
   const rest = items.filter(p => !Number.isInteger(p.rowHint)).sort((a, b) => a.start - b.start || a.end - b.end);
   const rows = [], raw = new Map();
   const fits = (r, p) => !(rows[r] || []).some(q => q.start < p.end && p.start < q.end);
@@ -350,6 +351,36 @@ function moveToLane(p, role, fromPerson, toPerson) {
   p.assignments = rest;
   return true;
 }
+// PRZESUNIĘCIE KAFLA — jedno źródło dla podglądu „tu wyląduje” i dla upuszczenia (podgląd = wynik).
+// m = { project, start (nowy start), laneItems (projekty pasa docelowego, jak w renderze), winner (obecny lastDropped),
+//       role, fromPerson, toPerson, otherLane (czy pas docelowy to inny pas), srcRow, row (null = bez ruchu w pionie) }
+// → { changes (pola projektu do nadpisania; {} = nic), row (wiersz po upuszczeniu), pushed (tytuły zepchniętych niżej), winner }
+function planMove(m) {
+  const p = m.project, changes = {};
+  const start = m.start, end = TERM.endFrom(start, TERM.days(p.start, p.end));
+  if (+start !== +p.start) { changes.start = start; changes.end = end; }
+  if (m.row != null) {
+    const tmp = { assignments: p.assignments.map(a => ({ ...a })) };
+    const laneChanged = !!m.otherLane && moveToLane(tmp, m.role, m.fromPerson, m.toPerson);
+    if (laneChanged) changes.assignments = tmp.assignments;
+    if (laneChanged || m.row !== m.srcRow) changes.rowHint = m.row;
+  }
+  const winner = 'rowHint' in changes ? p.id : m.winner;
+  const others = (m.laneItems || []).filter(x => x.id !== p.id);
+  const after = stack(others.concat([{ ...p, ...changes }]), winner);
+  const before = stack(m.laneItems || [], m.winner);
+  const pushed = others.filter(x => before.pos.has(x.id) && after.pos.get(x.id) > before.pos.get(x.id)).map(x => x.title);
+  return { changes, row: after.pos.get(p.id), pushed, winner };
+}
+// Upuszczenie: nadpisuje pola projektu i ustawia zwycięzcę wiersza. true = coś się zmieniło.
+function applyMove(p, plan) {
+  if (!Object.keys(plan.changes).length) return false;
+  Object.assign(p, plan.changes);
+  lastDropped = plan.winner;
+  return true;
+}
+// Kafla zakończonego projektu nie przesuwamy ani nie rozciągamy — daty zmienia się na karcie.
+const canDrag = p => p.status !== 'done';
 
 // 4. SERIALIZACJA I BAZA
 const curTab = () => AppState.tabs.find(t => t.id === AppState.activeTab) || AppState.tabs[0];
@@ -598,5 +629,5 @@ function load(done) {
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06f');
+// ===== KONIEC js-model (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06g');
