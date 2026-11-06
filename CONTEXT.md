@@ -35,7 +35,7 @@ Moment, w którym decydujemy się na pracę nad projektem: przejście z „plano
 _Avoid_: start, uruchomienie, data zatwierdzenia
 
 **Plan pierwotny**:
-Daty startu i końca projektu zamrożone w chwili zobowiązania; od nich liczy się opóźnienie.
+Daty startu i końca projektu zamrożone w chwili zobowiązania; od nich liczy się opóźnienie. Zmienić go może właściciel i edytor karty tego projektu.
 _Avoid_: baseline (bez dopowiedzenia)
 
 **Wartość wyjściowa → cel**:
