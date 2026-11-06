@@ -22,7 +22,7 @@ function metrics() {
   const onTime = withPlan.length ? withPlan.filter(x => x.lt <= x.plan).length / withPlan.length : null;
   const R = { r50: pctl(ratios, .5), r85: pctl(ratios, .85) };
   // Monte Carlo: kolejne planowane projekty kończą się w tempie historycznej przepustowości tygodniowej
-  const planned = all.filter(p => p.status === 'planned').sort((a, b) => a.start - b.start);
+  const planned = all.filter(isPlanned).sort((a, b) => a.start - b.start);
   const N = planned.length, TR = 2000, hits = planned.map(() => []);
   const r = rng(7);
   if (N && tp.some(x => x > 0)) for (let t = 0; t < TR; t++) {
@@ -217,5 +217,5 @@ document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => b.addEven
 applyWidok();
 renderAll();
 
-// ===== KONIEC js-miary (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-miary@2026-11-06f');
+// ===== KONIEC js-miary (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-miary@2026-11-06g');

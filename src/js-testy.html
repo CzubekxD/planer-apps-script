@@ -176,6 +176,28 @@ test('stan: projekty w toku dziś (Miary) = ta sama definicja co „W trakcie dz
   const ps = SO_PORTFEL();
   eq([projectsOngoingOn(ps, SO_DZIS).map(p => p.title[0]).join(''), computeKpi([], ps, SO_DZIS, SO_MIES.slice(0, 1)).active], ['ABF', 3]);
 });
+test('stan: „otwarty” = z terminem, nie zakończony, w trakcie (także po terminie) albo planowany z końcem po dziś', () => {
+  const t = (st, s, e, x) => SO(st, 'Jan', { start: s, end: e, ...x });
+  eq([
+    isOpen(t('ongoing', '2026-09-01', '2026-11-01', { startedAt: '2026-09-01' }), SO_DZIS),   // po terminie, ale w trakcie
+    isOpen(t('planned', '2026-12-01', '2026-12-10'), SO_DZIS),
+    isOpen(t('planned', '2026-10-01', '2026-11-01'), SO_DZIS),                                  // planowany po terminie
+    isOpen(t('done', '2026-11-01', '2026-12-10', { startedAt: '2026-11-01', doneAt: '2026-11-05' }), SO_DZIS),
+    isOpen(SO('planned', 'Jan', { start: null, end: null }), SO_DZIS)
+  ], [true, true, false, false, false]);
+});
+test('stan: „planowany w 90 dni” — jedna stała, granica włącznie, planowany po terminie odpada', () => {
+  eq(PLANNED_HORIZON_DAYS, 90);
+  const t = (st, s, e) => SO(st, 'Jan', { start: s, end: e });
+  eq([
+    plannedSoon(t('planned', L.toISO(addDays(SO_DZIS, 90)), L.toISO(addDays(SO_DZIS, 100))), SO_DZIS),
+    plannedSoon(t('planned', L.toISO(addDays(SO_DZIS, 91)), L.toISO(addDays(SO_DZIS, 100))), SO_DZIS),
+    plannedSoon(t('planned', '2026-10-01', '2026-11-01'), SO_DZIS),
+    plannedSoon(t('ongoing', '2026-11-10', '2026-11-20'), SO_DZIS),
+    startsWithin(t('ongoing', L.toISO(addDays(SO_DZIS, 90)), L.toISO(addDays(SO_DZIS, 95))), SO_DZIS),
+    startsWithin(t('planned', '2026-11-06', '2026-11-20'), SO_DZIS)
+  ], [true, false, false, false, true, false]);
+});
 test('stan: Miary na tym samym portfelu (listopad: 2 planowane, 3 w trakcie, 1 zakończony)', () => {
   const r = statusByMonth(SO_PORTFEL(), SO_DZIS).find(x => L.toISO(x.from) === '2026-11-01');
   eq([r.planned, r.ongoing, r.done], [2, 3, 1]);
@@ -240,5 +262,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06f');
+// ===== KONIEC js-testy (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06g');

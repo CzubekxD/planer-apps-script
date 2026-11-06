@@ -456,6 +456,13 @@ function ongoingSpan(p, today) {
 const ongoingIn = (p, from, to, today) => { const s = ongoingSpan(p, today); return !!s && TERM.overlaps(s[0], s[1], from, to); };
 // Planowany w okresie: termin z karty nachodzi na okres; planowany, któremu minęła data startu, zostaje planowanym od dziś w przód (jak w Miarach)
 const plannedIn = (p, from, to, today) => p.status === 'planned' && hasDates(p) && (TERM.overlaps(p.start, p.end, from, to) || (p.start < today && to > today));
+// Otwarty: z terminem, niezakończony; w trakcie (także po terminie z karty) albo planowany z końcem po dziś. Używa decyzji portfela.
+const isOpen = (p, today) => !!hasDates(p) && p.status !== 'done' && (ongoingIn(p, today, TERM.endAfter(today), today) || p.end > today);
+const isPlanned = p => p.status === 'planned';
+// „W N dni”: jedna stała dla kafelka „Start w 90 dni” i Obeya
+const PLANNED_HORIZON_DAYS = 90;
+const startsWithin = (p, today, days = PLANNED_HORIZON_DAYS) => !!hasDates(p) && p.start > today && p.start <= addDays(today, days);
+const plannedSoon = (p, today, days = PLANNED_HORIZON_DAYS) => isPlanned(p) && !!hasDates(p) && p.end > today && p.start <= addDays(today, days);
 const projectsOngoingOn = (projects, day) => projects.filter(p => ongoingIn(p, day, TERM.endAfter(day), day));
 // Czas realizacji (dni, włącznie): od zobowiązania do zakończenia; tylko zakończony
 const leadTime = p => (p.status === 'done' && p.startedAt && p.doneAt) ? TERM.days(p.startedAt, TERM.endAfter(p.doneAt)) : null;
@@ -598,5 +605,5 @@ function load(done) {
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06f');
+// ===== KONIEC js-model (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06g');

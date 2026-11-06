@@ -46,7 +46,7 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
   const add = (prio, typ, p, text) => out.push({ prio, typ, project: p, title: p ? p.title : null, text });
 
   const ongoingToday = new Set(projectsOngoingOn(projects, today));
-  projects.filter(p => hasDates(p) && p.status !== 'done' && (ongoingToday.has(p) || p.end > today)).forEach(p => {   // otwarte: w trakcie (także po terminie) albo planowane przed końcem
+  projects.filter(p => isOpen(p, today)).forEach(p => {   // otwarte: w trakcie (także po terminie) albo planowane przed końcem
     const active = ongoingToday.has(p);
     const startsSoon = p.start > today && p.start <= in30;
     const d = delayDays(p);
@@ -73,7 +73,7 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
 function computeKpi(decisions, projects = AppState.projects, today = startOfToday(), months = heatMonths(1)) {
   const valid = projects.filter(hasDates);
   const active = projectsOngoingOn(valid, today);   // w trakcie dziś (także po terminie z karty); planowany po dacie startu się nie liczy
-  const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
+  const next90 = valid.filter(p => startsWithin(p, today));
   const load = computeLoad(months, projects, today);
   return {
     active: active.length,
@@ -132,7 +132,7 @@ function openObeyaReview() {
   const rank = { red: 0, amber: 1, green: 2, '': 3 };
   const ongoingToday = new Set(projectsOngoingOn(AppState.projects, today));
   const active = AppState.projects   // Obeya: w trakcie dziś + planowane ze startem w 90 dni
-    .filter(p => ongoingToday.has(p) || (p.status === 'planned' && hasDates(p) && p.end > today && p.start <= addDays(today, 90)))
+    .filter(p => ongoingToday.has(p) || plannedSoon(p, today))
     .sort((a, b) => (rank[a.rag] - rank[b.rag]) || a.start - b.start);
   const months = heatMonths(6);
   const load = computeLoad(months).filter(r => r.counts.some(c => c >= AppState.wipLimit));
@@ -257,5 +257,5 @@ f('importPlik').addEventListener('change', async (e) => {
   } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
 });
 
-// ===== KONIEC js-portfel (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-portfel@2026-11-06f');
+// ===== KONIEC js-portfel (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06g');
