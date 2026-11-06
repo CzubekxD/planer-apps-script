@@ -98,7 +98,7 @@ Stary format `{ projects: [...] }` (bez zakładek) jest czytany jako jedna zakł
 
 ### 4.3 Daty
 - Daty w danych to lokalne `RRRR-MM-DD`, bez stref czasowych. Cała logika dat siedzi w `DATE_LIB` (js-model) z testami.
-- **[Z-19]** Termin `[start, end)`: koniec w danych jest wyłączny, a na ekranie i w dacie zakończenia jest ostatni dzień. Zamianę robi tylko `TERM` (js-model): ostatni dzień, koniec, koniec o danej długości, długość, etykieta „od – do”, zawieranie dnia, nakładanie. W `js-*` nie ma ręcznych „±1 dzień” przy końcu terminu (PlanLib ma własne `endIncl`, bo działa też na serwerze).
+- **[Z-19]** Termin `[start, end)`: koniec w danych jest wyłączny, a na ekranie i w dacie zakończenia jest ostatni dzień. Zamianę robi tylko `TERM` (js-model): ostatni dzień, koniec, koniec o danej długości, długość, etykieta „od – do”, zawieranie dnia, nakładanie. W `js-*` nie ma ręcznych „±1 dzień” przy końcu terminu (PlanLib ma własne `endIncl` — świadome odstępstwo: ta sama zamiana na tekście daty w UTC, bo PlanLib działa też na serwerze i jest wklejany do przeglądarki bez `js-model`. Test w `server.test.js` porównuje `endIncl` z `TERM.lastDay` na granicach — koniec miesiąca i roku, luty przestępny, jednodniowy, zmiana czasu w kilku strefach — i pilnuje, że w `PlanLib.gs` i `Code.gs` nie ma żadnej innej arytmetyki dat).
 - **[Z-7]** Nieistniejąca data (30 lutego) jest odrzucana, a nie przesuwana na 2 marca. Różnice dni są poprawne przez zmianę czasu (doby 23 h / 25 h). Tygodnie liczone wg ISO.
 
 ## 5. Serwer (API dla `google.script.run`)

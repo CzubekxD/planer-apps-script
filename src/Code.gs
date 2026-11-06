@@ -14,7 +14,7 @@
  *
  * Pliki projektu: Code.gs (serwer), PlanLib.gs (logika wspólna), Index (szkielet), Styles (CSS), js-* (aplikacja).
  */
-const CODE_VERSION = '2026-11-06';   // musi się zgadzać z wersją plików js-* (kontrola wklejenia)
+const CODE_VERSION = '2026-11-06i';   // musi się zgadzać z wersją plików js-* (kontrola wklejenia)
 const OWNERS = ['twoj.email@firma.pl'];   // ← wpisz swój służbowy e-mail (małe litery)
 const SHEET_ID = '';   // opcjonalnie: ID istniejącego Arkusza. Puste = skrypt sam założy „Planer – dane” na Twoim Dysku
 const PLAN_SHEET = 'Planer_dane';      // A1 = wersja, B1… = plan (JSON)

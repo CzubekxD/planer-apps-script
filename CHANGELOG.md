@@ -2,10 +2,11 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06h**
+Aktualna paczka: **2026-11-06i**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Daty | Dokończenie porządków (#6): `endIncl` w PlanLib to świadome odstępstwo od TERM (serwer nie ma `js-model`). Opisane w komentarzu i SPEC Z-19; nowe testy sprawdzają zgodność z `TERM.lastDay` na granicach dat (koniec miesiąca i roku, luty przestępny, jednodniowy, zmiana czasu) i że w `.gs` nie ma innej arytmetyki dat. Działanie bez zmian. | PlanLib.gs, Code.gs, js-start |
 | 06.11 | Uprawnienia | Jeden moduł `Perm` w przeglądarce (#8): rola z Arkusza (właściciel / edytor karty / obserwator) osobno od trybu „Podgląd jako” i od braku Arkusza; test każdej roli w każdym trybie. Działanie bez zmian; serwer nadal sam pilnuje uprawnień. | js-model, js-os, js-karta, js-historia, js-testy, js-start |
 | 06.11 | Oś | Przeciąganie kafla (#7): ramka „tu wyląduje” pokazuje dokładnie miejsce i daty po upuszczeniu (jeden moduł planMove liczy podgląd i zapis). Kafla zakończonego projektu nie da się przesunąć ani rozciągnąć — daty zmienia się na karcie. Nowe testy przeciągania w przeglądarce. | js-model, js-os, js-testy, js-start |
 | 06.11 | Daty | Porządki (#6): zamiana „ostatni dzień” ↔ „koniec terminu” tylko w jednym miejscu (TERM), test pilnuje, żeby nie wracały ręczne „−1 dzień”. Działanie bez zmian; daty na kaflu z półpauzą „–” jak wszędzie. | js-model, js-karta, js-miary, js-os, js-portfel, js-testy, js-start |

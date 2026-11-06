@@ -13,6 +13,7 @@ Web app Google Apps Script. Kod w `src/` wkleja do edytora Apps Script ręcznie 
 3. `npm test` musi być zielony.
 4. Dopisz wiersz na górze `CHANGELOG.md` (data, obszar, zmiana, pliki) i ten sam wiersz w dokumencie Claude Docs „Planer – opis zmian” (https://claude.ai/artifact/QyogqBV1iVy6r7AbxTXDQV), łącznie z numerem paczki w akapicie wstępnym.
 5. `npm run paczka` → wyślij zip i wypisz wprost, **które pliki podmienić** (zwykle 1–3) i że wdrożenie to *Zarządzaj wdrożeniami → ołówek → Nowa wersja → Wdróż*.
+6. Zmianę wypchnij na wyznaczoną gałąź i **otwórz PR do `main`** (w opisie: co i dlaczego, numer zgłoszenia `Closes #n`, lista plików do podmiany, wynik `npm test`). Szablonu PR nie ma. Po otwarciu zapytaj Matiego, czy subskrybować PR.
 
 ## Stałe decyzje
 - Zostaje podział na pliki. Nie sklejamy w jeden Index (temat zamknięty).

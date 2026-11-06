@@ -177,3 +177,56 @@ test('termin: poza TERM i DATE_LIB (js-model) w kodzie nie ma ręcznych „±1 d
   });
   assert.deepEqual(bad, []);
 });
+
+// --- PlanLib.gs ma własną zamianę „koniec wyłączny → ostatni dzień” (endIncl): działa na serwerze bez DATE_LIB.
+// Test pilnuje, że daje dokładnie to samo co TERM.lastDay z js-model, także w strefach ze zmianą czasu.
+function termFromJsModel() {
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js-model.html'), 'utf8');
+  const from = src.indexOf('const DATE_LIB = '), endTerm = src.indexOf('\n};', src.indexOf('const TERM = {')) + 3;
+  const ctx = vm.createContext({});
+  // formatDate/addDays/diffDays są potrzebne TERM-owi, a w pliku powstają dopiero po DATE_LIB
+  vm.runInContext(src.slice(from, src.indexOf('// ===== KONIEC DATE_LIB =====')).replace('const DATE_LIB', 'var DATE_LIB') +
+    '\nvar addDays = DATE_LIB.addDays, diffDays = DATE_LIB.diffDays, formatDate = DATE_LIB.format;\n' +
+    src.slice(src.indexOf('const TERM = {'), endTerm).replace('const TERM', 'var TERM'), ctx);
+  return ctx;
+}
+
+test('endIncl (PlanLib) = TERM.lastDay: koniec miesiąca, roku, rok przestępny, jednodniowy, zmiana czasu', () => {
+  const oldTZ = process.env.TZ;
+  const { PLAN_LIB } = createGas();
+  const ends = ['2026-12-01', '2027-01-01', '2028-03-01', '2027-03-01', '2026-11-02',   // 1. dzień miesiąca/roku, luty przestępny i zwykły, jednodniowy
+                '2027-03-28', '2027-03-29', '2027-03-30', '2026-10-25', '2026-10-26', '2026-03-30', '2026-03-29'];  // wokół zmiany czasu (PL/UE)
+  try {
+    for (const tz of ['UTC', 'Europe/Warsaw', 'America/New_York', 'Pacific/Auckland']) {
+      process.env.TZ = tz;
+      const { TERM, DATE_LIB } = termFromJsModel();
+      for (const end of ends) {
+        const start = DATE_LIB.toISO(TERM.lastDay(DATE_LIB.fromISO(end)));   // jednodniowy: start = ostatni dzień
+        const opis = PLAN_LIB.describeChanges(
+          { tabs: [{ id: 't', title: 'T', projects: [{ id: 'a', title: 'A', start, end: '2000-01-01' }] }] },
+          { tabs: [{ id: 't', title: 'T', projects: [{ id: 'a', title: 'A', start, end }] }] })[0];
+        const last = DATE_LIB.toISO(TERM.lastDay(DATE_LIB.fromISO(end)));
+        const mm = s => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
+        assert.ok(opis.endsWith(`→ ${mm(start)}–${mm(last)}`), `${tz} ${end}: ${opis}`);
+      }
+    }
+  } finally { if (oldTZ === undefined) delete process.env.TZ; else process.env.TZ = oldTZ; }
+});
+
+test('endIncl: brak daty, jednodniowy termin i nieparzyste wejście nie zrywają opisu zmian', () => {
+  const { PLAN_LIB } = createGas();
+  const p = (start, end) => ({ tabs: [{ id: 't', title: 'T', projects: [{ id: 'a', title: 'A', start, end }] }] });
+  assert.deepEqual([...PLAN_LIB.describeChanges(p('2026-11-04', '2026-11-05'), p('2026-11-04', null))], ['„A”: termin 04.11–04.11 → 04.11–—']);
+  assert.deepEqual([...PLAN_LIB.describeChanges(p(null, null), p('2026-11-04', '2026-11-05'))], ['„A”: termin —–— → 04.11–04.11']);
+});
+
+test('termin: PlanLib.gs i Code.gs mają jedną zamianę końca (endIncl), bez innych „±1 dzień”', () => {
+  const fs = require('fs'), path = require('path');
+  const bad = [];
+  ['PlanLib.gs', 'Code.gs'].forEach(n => fs.readFileSync(path.join(__dirname, '..', 'src', n), 'utf8').split('\n').forEach((line, i) => {
+    if (/^\s*const endIncl = /.test(line)) return;                                  // jedyne dozwolone miejsce (patrz komentarz i SPEC Z-19)
+    if (/addDays\(|diffDays\(|setDate\(|getDate\(\)|86400000|Date\.UTC\(/.test(line)) bad.push(`${n}:${i + 1}: ${line.trim().slice(0, 100)}`);
+  }));
+  assert.deepEqual(bad, []);
+});
