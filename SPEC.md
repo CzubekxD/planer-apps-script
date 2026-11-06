@@ -1,6 +1,6 @@
 # Planer — specyfikacja
 
-Stan: paczka **2026-11-06c**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
+Stan: paczka **2026-11-06d**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
 
 ## 1. Po co to jest
 
@@ -27,6 +27,7 @@ Użytkownicy: właściciel planu (Mati) edytuje wszystko; koledzy z firmy ogląd
 - Osoby: tabela rola → osoba w dwóch grupach. **Zespół** liczy się do obciążenia, **Interesariusze** nie. Podpowiedzi w polu „Osoba” pochodzą z ludzi, którzy już byli w tej roli.
 - Start (otwarcie) i Koniec (zamknięcie, **włącznie** w UI). W danych `end` jest **wyłączny** (dzień po ostatnim). Koniec przed startem jest odrzucany.
 - Plan pierwotny (baseline) zamraża się, gdy projekt przechodzi na „w trakcie”. Zapisuje się data faktycznego startu i zakończenia oraz historia statusów.
+- **[Z-17]** Reguły zmiany statusu siedzą w jednym miejscu (`saveCard`): każda zmiana statusu = wpis w historii statusów; → w trakcie: zobowiązanie = dziś; → zakończony: data zakończenia = dziś (planowany → zakończony bierze za zobowiązanie datę startu z karty); powrót do planowanego czyści zobowiązanie i plan pierwotny; ponowne otwarcie zakończonego czyści datę zakończenia. „Nowy plan pierwotny” wchodzi dopiero po Zapisz, Anuluj go wyrzuca. Plan pierwotny zmienia właściciel i edytor karty.
 - „Kto może edytować tę kartę”: lista e-maili.
 - Ctrl+S = zapisz, Esc = zamknij. Klik obok okna zamyka kartę tylko bez niezapisanych zmian; ze zmianami okno zostaje z „Zapisz albo Anuluj”.
 
@@ -132,7 +133,7 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 - **[Z-12]** Każdy `js-*` (poza js-start) kończy się linią `// ===== KONIEC <plik> (wersja X)` i `window.__planerParts.push('<plik>@X')`. Mapa `PLANER_FILES` w js-start zawiera dokładnie te wersje. `CODE_VERSION` = `PLAN_LIB_VERSION` = `PLANER_VERSION`. Plik ucięty przy wklejaniu albo w starej wersji → czerwony pasek z nazwą pliku.
 - Łapacz błędów w Index zamiast pustej strony pokazuje komunikat z listą plików, które wczytały się do końca.
 - Aktualizacja wyłącznie przez **Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa wersja → Wdróż**. „Nowe wdrożenie” zmienia adres. Adres `/dev` pokazuje ostatnio zapisany kod, ale pisze do **tego samego** Arkusza.
-- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 66) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
+- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 76) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
 
 ## 8. Czego świadomie nie ma
 - Jeden Index zamiast plików: temat zamknięty, zostaje podział na pliki.
@@ -165,3 +166,4 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-14 opóźnienie | js-testy (sekcja „opóźnienie”) |
 | Z-15 wykres statusów | js-testy (sekcja „Miary”); e2e: `Miary: wykres wg statusu…` |
 | Z-16 przywrócenie w trakcie zapisu | sesja: `przywrócenie w trakcie zapisu…`, `render bez zmian…`; e2e: `przywrócenie z Historii w trakcie zapisu…` |
+| Z-17 cykl życia projektu | js-testy (sekcja „cykl”); e2e: `karta: „Nowy plan pierwotny”…` |

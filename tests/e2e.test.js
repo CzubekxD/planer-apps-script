@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 66, `testów: ${res.length}`);   // stan na paczkę 06b: 66
+  assert.ok(res.length >= 76, `testów: ${res.length}`);   // stan na paczkę 06d: 76
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);
@@ -183,6 +183,28 @@ test('przywrócenie z Historii w trakcie zapisu (wolny serwer): plan = przywróc
   await settle(page);
   assert.deepEqual(gas.state.calls.slice(calls), ['savePlan'], 'jeden zapis, bez scalania');
   assert.deepEqual(titles(gas), ['v1 poprawione']);
+  assert.equal(await alarmText(page), '');
+  await page.close2();
+});
+
+test('karta: „Nowy plan pierwotny” + Anuluj nic nie zmienia; + Zapisz przyjmuje obecne daty', async () => {
+  const gas = createGas();
+  seed(gas, proj('a', 'Opóźniony', { status: 'ongoing', start: '2026-11-09', end: '2026-12-08', startedAt: '2026-11-05', baselineStart: '2026-11-02', baselineEnd: '2026-12-01' }));
+  const page = await openPlaner(gas);
+  page.on('dialog', d => d.accept());
+  const stan = () => { const p = gas.storedPlan().tabs[0].projects[0]; return `${p.baselineStart}..${p.baselineEnd}`; };
+  const otworz = () => page.evaluate(() => openModal(AppState.projects[0]));
+  await otworz();
+  await page.click('#rebaselineBtn');
+  await page.click('#anulujBtn');
+  await settle(page);
+  assert.equal(stan(), '2026-11-02..2026-12-01', 'Anuluj: plan pierwotny bez zmian');
+  assert.equal(await page.evaluate(() => toLocalISO(AppState.projects[0].baselineStart)), '2026-11-02', 'Anuluj: ekran bez zmian');
+  await otworz();
+  await page.click('#rebaselineBtn');
+  await page.click('#dodajBtn');
+  await settle(page);
+  assert.equal(stan(), '2026-11-09..2026-12-08', 'Zapisz: plan pierwotny = obecne daty');
   assert.equal(await alarmText(page), '');
   await page.close2();
 });

@@ -400,6 +400,31 @@ function normProject(p) {
     baselineEnd: ongoing ? (fromLocalISO(p.baselineEnd) || (end ? new Date(end) : null)) : null
   };
 }
+// CYKL ŻYCIA PROJEKTU (CONTEXT.md: Planowany, Zobowiązanie, Plan pierwotny, Zakończony).
+// Zapis karty: z poprzedniego projektu (albo null = nowy) i danych z karty powstaje NOWY projekt. Poprzedni zostaje nietknięty,
+// więc Anuluj na karcie niczego nie zmienia. Jedyne miejsce z regułami zmiany statusu:
+//  • każda zmiana statusu = wpis w historii statusów (data = dziś),
+//  • → w trakcie: zobowiązanie = dziś (chyba że już było); → zakończony: data zakończenia = dziś,
+//    a planowany → zakończony bez zobowiązania bierze za zobowiązanie datę startu z karty,
+//  • plan pierwotny zamraża się przy zobowiązaniu (obecne daty z karty) i znika przy powrocie do planowanego,
+//  • rebaseline (przycisk „Nowy plan pierwotny”): plan pierwotny = obecne daty z karty; dla planowanego bez skutku.
+function saveCard(prev, data, today, { id, rebaseline = false } = {}) {
+  const copy = d => d ? new Date(d) : null;
+  const p = prev
+    ? { ...prev, ...data, history: prev.history.map(h => ({ ...h })), startedAt: copy(prev.startedAt), doneAt: copy(prev.doneAt), baselineStart: copy(prev.baselineStart), baselineEnd: copy(prev.baselineEnd) }
+    : { id, ...data, baselineStart: null, baselineEnd: null, startedAt: null, doneAt: null, history: [] };
+  const wasCommitted = !!prev && prev.status !== 'planned';
+  if (p.status !== (prev ? prev.status : null)) {
+    p.history.push({ date: toLocalISO(today), status: p.status });
+    if (p.status === 'ongoing' && !p.startedAt) p.startedAt = new Date(today);
+    if (p.status === 'done') { if (!p.startedAt) p.startedAt = new Date(p.start); p.doneAt = new Date(today); }
+    if (p.status !== 'done') p.doneAt = null;
+    if (p.status === 'planned') p.startedAt = null;
+  }
+  if (p.status === 'planned') { p.baselineStart = null; p.baselineEnd = null; }
+  else if (!wasCommitted || !p.baselineStart || rebaseline) { p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end); }
+  return p;
+}
 const hasPlan = d => d && (Array.isArray(d.tabs) || Array.isArray(d.projects));
 
 function applyData(data) {
@@ -518,5 +543,5 @@ function load(done) {
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06c) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06c');
+// ===== KONIEC js-model (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06d');

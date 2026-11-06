@@ -101,6 +101,24 @@ test('przeniesienie do pasa innej osoby zmienia osobę w roli', () => { const p 
 test('przeniesienie do „nieprzypisane” usuwa osobę z tej roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }] }; moveToLane(p, 'Kupiec', 'Jan', ''); eq(p.assignments, []); });
 test('dziennik: zmiana miejsca w pasie jest opisana', () => { const a = P0(), b = P0(); b.tabs[0].projects[0].rowHint = 2; eq(PLAN_LIB.describeChanges(a, b), ['„Moja karta Jana”: miejsce w pasie']); });
 
+// --- cykl życia projektu: zapis karty (CONTEXT.md: Zobowiązanie, Plan pierwotny, Zakończony) ---
+const CY_DZIS = D(2026, 11, 15);
+const CY = (status, extra) => normProject({ id: 'p', title: 'P', status, start: '2026-11-02', end: '2026-12-01', assignments: [], ...extra });
+const CY_KARTA = (status, extra) => ({ title: 'P', status, start: D(2026, 11, 2), end: D(2026, 12, 1), assignments: [], milestones: [], method: 'klasyczna', mf: {}, editors: [], ...extra });
+const cyOpis = p => `${p.status} zob:${L.toISO(p.startedAt) || '-'} zak:${L.toISO(p.doneAt) || '-'} plan:${L.toISO(p.baselineStart) || '-'}..${L.toISO(p.baselineEnd) || '-'} hist:${p.history.map(h => h.status[0]).join('')}`;
+const cyZapis = (prev, data, opt) => cyOpis(saveCard(prev, data, CY_DZIS, opt));
+const W_TRAKCIE = () => CY('ongoing', { startedAt: '2026-11-05', baselineStart: '2026-11-02', baselineEnd: '2026-12-01', history: [{ date: '2026-11-01', status: 'planned' }, { date: '2026-11-05', status: 'ongoing' }] });
+test('cykl: nowy projekt planowany — wpis w historii, bez zobowiązania i planu pierwotnego', () => eq(cyZapis(null, CY_KARTA('planned'), { id: 'n' }), 'planned zob:- zak:- plan:-..- hist:p'));
+test('cykl: planowany → w trakcie = zobowiązanie dziś + zamrożenie planu pierwotnego', () => eq(cyZapis(CY('planned', { history: [{ date: '2026-11-01', status: 'planned' }] }), CY_KARTA('ongoing')), 'ongoing zob:2026-11-15 zak:- plan:2026-11-02..2026-12-01 hist:po'));
+test('cykl: w trakcie → zakończony = data zakończenia dziś, plan pierwotny bez zmian', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('done', { end: D(2026, 12, 20) })), 'done zob:2026-11-05 zak:2026-11-15 plan:2026-11-02..2026-12-01 hist:pod'));
+test('cykl: planowany → zakończony = zobowiązanie z daty startu na karcie, plan pierwotny z obecnych dat', () => eq(cyZapis(CY('planned', { history: [{ date: '2026-11-01', status: 'planned' }] }), CY_KARTA('done')), 'done zob:2026-11-02 zak:2026-11-15 plan:2026-11-02..2026-12-01 hist:pd'));
+test('cykl: zakończony → w trakcie (ponowne otwarcie) = bez daty zakończenia, zobowiązanie i plan zostają', () => eq(cyZapis(CY('done', { startedAt: '2026-11-05', doneAt: '2026-11-10', baselineStart: '2026-11-02', baselineEnd: '2026-12-01', history: [{ date: '2026-11-05', status: 'ongoing' }, { date: '2026-11-10', status: 'done' }] }), CY_KARTA('ongoing')), 'ongoing zob:2026-11-05 zak:- plan:2026-11-02..2026-12-01 hist:odo'));
+test('cykl: w trakcie → planowany = bez zobowiązania i planu pierwotnego', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('planned')), 'planned zob:- zak:- plan:-..- hist:pop'));
+test('cykl: w trakcie, przesunięte daty bez zmiany statusu — plan pierwotny i historia bez zmian', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('ongoing', { start: D(2026, 11, 9), end: D(2026, 12, 8) })), 'ongoing zob:2026-11-05 zak:- plan:2026-11-02..2026-12-01 hist:po'));
+test('cykl: nowy plan pierwotny = obecne daty z karty', () => eq(cyZapis(W_TRAKCIE(), CY_KARTA('ongoing', { start: D(2026, 11, 9), end: D(2026, 12, 8) }), { rebaseline: true }), 'ongoing zob:2026-11-05 zak:- plan:2026-11-09..2026-12-08 hist:po'));
+test('cykl: nowy plan pierwotny dla planowanego nic nie ustawia', () => eq(cyZapis(CY('planned'), CY_KARTA('planned'), { rebaseline: true }), 'planned zob:- zak:- plan:-..- hist:'));
+test('cykl: zapis karty nie zmienia poprzedniego obiektu (Anuluj = bez skutków)', () => { const p = W_TRAKCIE(), przed = JSON.stringify(serProject(p)); saveCard(p, CY_KARTA('done'), CY_DZIS, { rebaseline: true }); eq(JSON.stringify(serProject(p)), przed); });
+
 // --- opóźnienie (CONTEXT.md: „Opóźnienie”) ---
 const OP = (status, extra) => ({ status, baselineEnd: D(2026, 12, 1), end: D(2026, 12, 1), doneAt: null, ...extra });
 test('opóźnienie: w trakcie z końcem przesuniętym o 10 dni = +10', () => eq(delayDays(OP('ongoing', { end: D(2026, 12, 11) })), 10));
@@ -160,5 +178,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06b) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06b');
+// ===== KONIEC js-testy (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06d');

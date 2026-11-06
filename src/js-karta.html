@@ -135,10 +135,17 @@ f('m-metoda').innerHTML = METHOD_KEYS.map(k => `<option value="${k}">${esc(METHO
 f('m-metoda').addEventListener('change', e => { collectMethodFields(); renderMethodFields(e.target.value); });
 f('dodajKm').addEventListener('click', () => addKmRow().querySelector('.km-nazwa').focus());
 
+// „Nowy plan pierwotny” to zmiana na karcie jak każda inna: wchodzi dopiero po Zapisz, Anuluj ją wyrzuca
+let rebaselineDraft = false;
 function renderBaselineInfo(p) {
   const box = f('baselineInfo');
   if (!p || p.status !== 'ongoing' || !p.baselineStart) { box.hidden = true; return; }
   box.hidden = false;
+  if (rebaselineDraft) {
+    f('baselineTekst').innerHTML = `<div><b>Nowy plan pierwotny:</b> ${formatDate(p.start)} – ${formatDate(addDays(p.end, -1))}</div><div class="ok">Wejdzie po kliknięciu Zapisz (z datami z karty).</div>`;
+    f('rebaselineBtn').hidden = true;
+    return;
+  }
   const d = delayDays(p);
   const plan = `${formatDate(p.baselineStart)} – ${formatDate(addDays(p.baselineEnd, -1))}`;
   const teraz = `${formatDate(p.start)} – ${formatDate(addDays(p.end, -1))}`;
@@ -150,11 +157,10 @@ function renderBaselineInfo(p) {
 
 f('rebaselineBtn').addEventListener('click', () => {
   const p = AppState.projects.find(x => x.id === currentEditId);
-  if (!p) return;
-  if (!confirm('Przyjąć obecne daty jako nowy plan? Opóźnienie zostanie wyzerowane.')) return;
-  p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end);
+  if (!p || !canEditCard(p)) return;
+  if (!confirm('Przyjąć obecne daty jako nowy plan? Opóźnienie zostanie wyzerowane po kliknięciu Zapisz.')) return;
+  rebaselineDraft = true;
   renderBaselineInfo(p);
-  renderAll();
 });
 
 // Etykieta trybu nad kartą (dla nie-właściciela: „Możesz edytować” / „Tylko podgląd”)
@@ -167,6 +173,7 @@ function openModalModeLabel() {
   tryb.textContent = editable ? '✎ Możesz edytować tę kartę' : 'Tylko podgląd — poproś właściciela planu o dopisanie Twojego e-maila';
 }
 function openModal(project = null) {
+  rebaselineDraft = false;
   f('modalTitle').textContent = project ? 'Edytuj Projekt' : 'Nowy Projekt';
   f('projTytul').value = project ? project.title : '';
   // Daty: koniec w polu jest WŁĄCZNIE (ostatni dzień projektu), w danych wyłącznie (+1 dzień)
@@ -224,8 +231,8 @@ function openModal(project = null) {
 let modalSnapshot = '', modalEditable = false;
 const modalState = () => JSON.stringify([...modal.querySelectorAll('.modal-karta input, .modal-karta select, .modal-karta textarea')]
   .map(el => (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value));
-const modalDirty = () => modal.classList.contains('active') && modalEditable && modalState() !== modalSnapshot;
-function closeModal() { modal.classList.remove('active'); currentEditId = null; modalSnapshot = ''; }
+const modalDirty = () => modal.classList.contains('active') && modalEditable && (rebaselineDraft || modalState() !== modalSnapshot);
+function closeModal() { modal.classList.remove('active'); currentEditId = null; modalSnapshot = ''; rebaselineDraft = false; }
 function tryCloseModal() {
   if (modalDirty() && !confirm('Masz niezapisane zmiany w tej karcie.\n\nZamknąć bez zapisywania?')) return;
   closeModal();
@@ -252,28 +259,13 @@ f('dodajBtn').addEventListener('click', () => {
   data.mf = { ...mfDraft };
   try { localStorage.setItem('planer.metoda', data.method); } catch (e) {}
 
-  let p = AppState.projects.find(x => x.id === currentEditId);
-  if (p ? !canEditCard(p) : !Perm.isOwner) { closeModal(); return; }
-  data.editors = Perm.isOwner ? parseEmails(f('projEdytorzy').value) : (p ? p.editors : []);
-  const prevStatus = p ? p.status : null;
-  const wasOngoing = !!p && p.status !== 'planned';
-  if (p) Object.assign(p, data);
-  else {
-    p = { id: AppState.generateId(), ...data, baselineStart: null, baselineEnd: null, startedAt: null, doneAt: null, history: [] };
-    AppState.projects.push(p);
-  }
-  // Znaczniki czasu zmian statusu — surowe dane do miar przepływu
-  const today = startOfToday();
-  if (p.status !== prevStatus) {
-    p.history.push({ date: toLocalISO(today), status: p.status });
-    if (p.status === 'ongoing' && !p.startedAt) p.startedAt = today;
-    if (p.status === 'done') { if (!p.startedAt) p.startedAt = new Date(p.start); p.doneAt = today; }
-    if (p.status !== 'done') p.doneAt = null;
-    if (p.status === 'planned') p.startedAt = null;
-  }
-  // Plan pierwotny zamraża się w chwili przejścia na „W trakcie”
-  if (p.status !== 'planned' && (!wasOngoing || !p.baselineStart)) { p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end); }
-  if (p.status === 'planned') { p.baselineStart = null; p.baselineEnd = null; }
+  const prev = AppState.projects.find(x => x.id === currentEditId) || null;
+  if (prev ? !canEditCard(prev) : !Perm.isOwner) { closeModal(); return; }
+  data.editors = Perm.isOwner ? parseEmails(f('projEdytorzy').value) : (prev ? prev.editors : []);
+  // Reguły statusu, zobowiązania i planu pierwotnego: saveCard (js-model)
+  const next = saveCard(prev, data, startOfToday(), { id: AppState.generateId(), rebaseline: rebaselineDraft });
+  if (prev) AppState.projects[AppState.projects.indexOf(prev)] = next;
+  else AppState.projects.push(next);
 
   closeModal();
   renderAll();
@@ -299,5 +291,5 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!f('dodajBtn').hidden && getComputedStyle(f('dodajBtn')).display !== 'none') f('dodajBtn').click(); }   // Ctrl+S = Zapisz
 });
 
-// ===== KONIEC js-karta (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-karta@2026-11-06');
+// ===== KONIEC js-karta (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-karta@2026-11-06d');

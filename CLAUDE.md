@@ -21,6 +21,7 @@ Web app Google Apps Script. Kod w `src/` wkleja do edytora Apps Script ręcznie 
 - Uprawnienia egzekwuje serwer. Przeglądarka tylko ukrywa przyciski.
 - Bez Arkusza edycja jest zablokowana. Nie ma przycisku „Przeładuj” (kasował zmiany). Konflikty rozwiązuje `mergePlans`.
 - Zapis do Arkusza (wersja, kolejka, konflikty, przywrócenie) robi wyłącznie `createPlanSession` w `js-sesja`. Nie zna DOM ani `google.script.run`: dostaje adapter serwera i funkcje ekranu. Reszta kodu woła tylko `save()` (→ `session.changed()`) i `session.restore(id)`.
+- Reguły zmiany statusu, zobowiązania i planu pierwotnego są tylko w `saveCard` (js-model). Karta zbiera dane i woła `saveCard`; nowy obiekt projektu zastępuje stary (poprzedni nietknięty, więc Anuluj nic nie zmienia).
 - Przyspieszanie ładowania (CacheService) odłożone świadomie.
 
 ## Testy
