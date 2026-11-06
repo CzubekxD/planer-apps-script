@@ -173,6 +173,13 @@ test('Miary: wykres wg statusu w miesiącach, przełącznik stan / przepływ zap
   assert.equal(await karta.locator('svg.st-slupki rect.st-seg').count() > 0, true, 'są segmenty słupków');
   await karta.locator('button', { hasText: 'Przepływ' }).click();
   assert.equal(await page.locator('.mi-status svg.st-cfd').count(), 1, 'po kliknięciu: przepływ');
+  assert.equal(await page.locator('.mi-status svg.st-slupki').count(), 0, 'przepływ zastępuje słupki');
+  assert.equal(await page.locator('.mi-status svg.st-cfd polygon.st-seg').count(), 3, 'przepływ: trzy warstwy (zakończone, w trakcie, planowane)');
+  assert.equal(await karta.locator('button', { hasText: 'Przepływ' }).getAttribute('aria-pressed'), 'true', 'przycisk Przepływ wciśnięty');
+  await karta.locator('button', { hasText: 'Stan w miesiącu' }).click();
+  assert.equal(await page.locator('.mi-status svg.st-slupki').count(), 1, 'powrót do słupków');
+  assert.equal(await page.locator('.mi-status svg.st-cfd').count(), 0, 'słupki zastępują przepływ');
+  await karta.locator('button', { hasText: 'Przepływ' }).click();
   await page.reload();
   await page.waitForFunction(() => typeof AppState !== 'undefined' && document.querySelector('.mi-status'));
   assert.equal(await page.locator('.mi-status svg.st-cfd').count(), 1, 'wybór zapamiętany');

@@ -281,6 +281,12 @@ test('miary: zakończenie 1. i ostatniego dnia miesiąca liczy się w tym miesi�
   SM('done', { start: '2026-07-01', end: '2026-08-01', startedAt: '2026-07-01', doneAt: '2026-07-31', history: [{ date: '2026-07-01', status: 'ongoing' }] })], D(2026, 11, 15))),
   ['2026-05 P0 T1 Z0', '2026-06 P0 T0 Z1', '2026-07 P0 T0 Z1']));
 test('miary: pusty portfel = same zera', () => eq(smRows(statusByMonth([], D(2026, 11, 15))), []));
+test('miary: zakończony bez daty zakończenia liczy się w miesiącu ostatniego dnia terminu z karty', () => eq(smRows(statusByMonth([
+  SM('done', { start: '2026-08-20', end: '2026-09-11', startedAt: '2026-08-20', history: [{ date: '2026-08-01', status: 'planned' }] })], D(2026, 11, 15))),
+  ['2026-08 P0 T1 Z0', '2026-09 P0 T0 Z1']));
+test('miary: projekt, który w miesiącu wystartował i się nie skończył, jest tam tylko „w trakcie” (jeden stan na projekt, bez „planowany” na koniec miesiąca)', () => eq(smRows(statusByMonth([
+  SM('ongoing', { start: '2026-11-03', end: '2027-01-10', startedAt: '2026-11-03', history: [{ date: '2026-10-20', status: 'planned' }] })], D(2026, 11, 15))),
+  ['2026-10 P1 T0 Z0', '2026-11 P0 T1 Z0', '2026-12* P0 T1 Z0', '2027-01* P0 T0 Z1']));
 
 // --- scalanie przy konflikcie zapisu (dwie osoby / dwie karty naraz) ---
 const MP = (...projects) => ({ wipLimit: 2, horizonMonths: 20, tabs: [{ id: 't1', title: 'Portfolio', projects: projects.map(([id, title]) => ({ id, title })) }] });
@@ -308,5 +314,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06l) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06l');
+// ===== KONIEC js-testy (wersja 2026-11-06m) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06m');
