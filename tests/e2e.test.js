@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 83, `testów: ${res.length}`);   // stan na paczkę 06e: 83
+  assert.ok(res.length >= 87, `testów: ${res.length}`);   // stan na paczkę 06e: 87
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);

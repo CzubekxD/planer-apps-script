@@ -235,7 +235,7 @@ function makeKlocek(p, lane, sub) {
     } else parts.push('Projekt planowany');
     parts.push(`Metoda: ${METHODS[methodOf(p)].label}`);
     if (p.startedAt) parts.push(`Start faktyczny: ${formatDate(p.startedAt)}`);
-    if (p.status === 'done' && p.doneAt) parts.push(`Zakończony: ${formatDate(p.doneAt)}${p.startedAt ? ` · czas realizacji ${diffDays(p.startedAt, p.doneAt) + 1} dni` : ''}`);
+    if (p.status === 'done' && p.doneAt) parts.push(`Zakończony: ${formatDate(p.doneAt)}${leadTime(p) != null ? ` · czas realizacji ${leadTime(p)} dni` : ''}`);
     if (p.goal) parts.push(`Cel: ${p.goal}`);
     if (p.kpi || p.baseline) parts.push(`KPI: ${[p.kpi, p.baseline].filter(Boolean).join(' · ')}`);
     const team = teamOf(p).map(a => `${a.role}: ${a.person}`);
@@ -631,5 +631,5 @@ function showTooltip(x, y, text) {
 }
 function hideTooltip() { DOM.tooltip.style.display = 'none'; }
 
-// ===== KONIEC js-os (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-os@2026-11-06');
+// ===== KONIEC js-os (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-os@2026-11-06e');

@@ -434,7 +434,7 @@ function saveCard(prev, data, today, { id, rebaseline = false } = {}) {
   return lifecycleInvariants(p);
 }
 // STAN PROJEKTU W OKRESIE (CONTEXT.md: W trakcie, Projekty w toku, Limit WIP). Jedyne miejsce, które odpowiada na pytanie
-// „czy projekt był / będzie w trakcie w tym okresie”. Korzystają: obciążenie i decyzje (portfel), „Aktywne”, Miary.
+// „czy projekt był / będzie w trakcie w tym okresie”. Korzystają: obciążenie i decyzje (portfel), „W trakcie dziś”, Obeya A3, Miary.
 // W trakcie = od zobowiązania do faktycznego zakończenia; projekt w trakcie po terminie z karty zostaje w trakcie (także w przyszłości).
 // Planowany nigdy nie jest w trakcie (nie obciąża ludzi), ale ma swój termin z karty (plannedIn).
 function ongoingSpan(p, today) {
@@ -442,7 +442,11 @@ function ongoingSpan(p, today) {
   return [p.startedAt || p.start, p.status === 'done' ? actualEnd(p) : (p.end > today ? p.end : Infinity)];
 }
 const ongoingIn = (p, from, to, today) => { const s = ongoingSpan(p, today); return !!s && s[0] < to && s[1] > from; };
-const plannedIn = (p, from, to) => p.status === 'planned' && hasDates(p) && p.start < to && p.end > from;
+// Planowany w okresie: termin z karty nachodzi na okres; planowany, któremu minęła data startu, zostaje planowanym od dziś w przód (jak w Miarach)
+const plannedIn = (p, from, to, today) => p.status === 'planned' && hasDates(p) && ((p.start < to && p.end > from) || (p.start < today && to > today));
+const projectsOngoingOn = (projects, day) => projects.filter(p => ongoingIn(p, day, addDays(day, 1), day));
+// Czas realizacji (dni, włącznie): od zobowiązania do zakończenia; tylko zakończony
+const leadTime = p => (p.status === 'done' && p.startedAt && p.doneAt) ? diffDays(p.startedAt, p.doneAt) + 1 : null;
 // Jeden stan na okres (Miary): zakończony > w trakcie > planowany (na koniec okresu). Przeszłość i bieżący okres = faktyczny stan,
 // przyszłość = termin z karty (termin, który już minął, nie zmienia stanu).
 function stateInPeriod(p, from, to, today) {

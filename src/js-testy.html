@@ -151,10 +151,22 @@ test('stan: obciążenie liczy tylko w trakcie (także zakończony w tym miesią
   eq(computeLoad(SO_MIES, SO_PORTFEL(), SO_DZIS).map(r => `${r.name} w trakcie:${r.counts} planowane:${r.planned}`), ['Jan w trakcie:3,1 planowane:1,1', 'Ewa w trakcie:1,1 planowane:0,1']));
 test('stan: „Przeciążenie” tylko z projektów w trakcie', () =>
   eq(computeDecisions(SO_PORTFEL(), SO_DZIS, SO_MIES).filter(d => d.typ === 'Przeciążenie').map(d => d.text.split(' —')[0]), ['Jan: 3 równoległych projektów w Lis (limit 2)']));
-test('stan: „Aktywne” = w trakcie dziś (planowany po dacie startu się nie liczy)', () => {
+test('stan: „W trakcie dziś” = w trakcie dziś (planowany po dacie startu się nie liczy)', () => {
   const ps = SO_PORTFEL();
   const k = computeKpi(computeDecisions(ps, SO_DZIS, SO_MIES), ps, SO_DZIS, SO_MIES.slice(0, 1));
   eq([k.active, k.overloaded], [3, 1]);
+});
+test('stan: projekt po terminie z karty — „Opóźnione” i decyzja „Opóźnienie” go widzą', () => {
+  const ps = [SO('ongoing', 'Jan', { title: 'Po terminie', start: '2026-09-01', end: '2026-11-01', startedAt: '2026-09-01', baselineStart: '2026-09-01', baselineEnd: '2026-10-20' })];
+  const dec = computeDecisions(ps, SO_DZIS, SO_MIES);
+  eq([computeKpi(dec, ps, SO_DZIS, SO_MIES.slice(0, 1)).delayed, dec.filter(d => d.typ === 'Opóźnienie').length], [1, 1]);
+});
+test('stan: planowany z terminem z karty w przeszłości zostaje „+N” w bieżącym i przyszłych miesiącach (jak w Miarach)', () =>
+  eq(computeLoad(SO_MIES, [SO('planned', 'Jan', { title: 'Stary plan', start: '2026-10-01', end: '2026-11-05' })], SO_DZIS).map(r => `${r.counts}|${r.planned}`), ['0,0|1,1']));
+test('stan: czas realizacji = od zobowiązania do zakończenia, włącznie', () => eq([leadTime(SO_PORTFEL()[2]), leadTime(SO_PORTFEL()[0])], [27, null]));
+test('stan: projekty w toku dziś (Miary) = ta sama definicja co „W trakcie dziś”', () => {
+  const ps = SO_PORTFEL();
+  eq([projectsOngoingOn(ps, SO_DZIS).map(p => p.title[0]).join(''), computeKpi([], ps, SO_DZIS, SO_MIES.slice(0, 1)).active], ['ABF', 3]);
 });
 test('stan: Miary na tym samym portfelu (listopad: 2 planowane, 3 w trakcie, 1 zakończony)', () => {
   const r = statusByMonth(SO_PORTFEL(), SO_DZIS).find(x => L.toISO(x.from) === '2026-11-01');

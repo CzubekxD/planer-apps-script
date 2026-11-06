@@ -31,7 +31,7 @@ function computeLoad(months, projects = AppState.projects, today = startOfToday(
       const rec = people.get(key);
       months.forEach((m, i) => {
         if (ongoingIn(p, m.from, m.to, today)) { rec.counts[i]++; rec.projects[i].push(p.title); }
-        else if (plannedIn(p, m.from, m.to)) { rec.planned[i]++; rec.plannedProjects[i].push(p.title); }
+        else if (plannedIn(p, m.from, m.to, today)) { rec.planned[i]++; rec.plannedProjects[i].push(p.title); }
       });
     });
   });
@@ -45,8 +45,9 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
   const out = [];
   const add = (prio, typ, p, text) => out.push({ prio, typ, project: p, title: p ? p.title : null, text });
 
-  projects.filter(p => hasDates(p) && p.status !== 'done' && p.end > today).forEach(p => {
-    const active = p.start <= today;
+  const ongoingToday = new Set(projectsOngoingOn(projects, today));
+  projects.filter(p => hasDates(p) && p.status !== 'done' && (ongoingToday.has(p) || p.end > today)).forEach(p => {   // otwarte: w trakcie (także po terminie) albo planowane przed końcem
+    const active = ongoingToday.has(p);
     const startsSoon = p.start > today && p.start <= in30;
     const d = delayDays(p);
     if (d > 0) add(d > 14 ? 1 : 2, 'Opóźnienie', p, `Koniec przesunięty o ${d} dni wobec planu (${formatDate(addDays(p.baselineEnd, -1))} → ${formatDate(addDays(p.end, -1))}).`);
@@ -71,7 +72,7 @@ function computeDecisions(projects = AppState.projects, today = startOfToday(), 
 
 function computeKpi(decisions, projects = AppState.projects, today = startOfToday(), months = heatMonths(1)) {
   const valid = projects.filter(hasDates);
-  const active = valid.filter(p => ongoingIn(p, today, addDays(today, 1), today));   // w trakcie dziś; planowany po dacie startu się nie liczy
+  const active = projectsOngoingOn(valid, today);   // w trakcie dziś (także po terminie z karty); planowany po dacie startu się nie liczy
   const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
   const load = computeLoad(months, projects, today);
   return {
@@ -79,7 +80,7 @@ function computeKpi(decisions, projects = AppState.projects, today = startOfToda
     next90: next90.length,
     red: active.filter(p => p.rag === 'red').length,
     amber: active.filter(p => p.rag === 'amber').length,
-    delayed: valid.filter(p => p.status !== 'done' && p.end > today && delayDays(p) > 0).length,
+    delayed: active.filter(p => delayDays(p) > 0).length,
     overloaded: load.filter(r => r.counts[0] > AppState.wipLimit).length,
     critical: decisions.filter(d => d.prio === 1).length
   };
@@ -129,8 +130,9 @@ function openObeyaReview() {
   const today = startOfToday();
   const top = decisions.slice(0, 3);
   const rank = { red: 0, amber: 1, green: 2, '': 3 };
-  const active = AppState.projects
-    .filter(p => hasDates(p) && p.status !== 'done' && p.end > today && p.start <= addDays(today, 90))
+  const ongoingToday = new Set(projectsOngoingOn(AppState.projects, today));
+  const active = AppState.projects   // Obeya: w trakcie dziś + planowane ze startem w 90 dni
+    .filter(p => ongoingToday.has(p) || (p.status === 'planned' && hasDates(p) && p.end > today && p.start <= addDays(today, 90)))
     .sort((a, b) => (rank[a.rag] - rank[b.rag]) || a.start - b.start);
   const months = heatMonths(6);
   const load = computeLoad(months).filter(r => r.counts.some(c => c >= AppState.wipLimit));
@@ -164,7 +166,7 @@ th { background: #E7EBE9; } .rag { display: inline-block; width: 9pt; height: 9p
 <button class="print-btn" onclick="window.print()">Drukuj / PDF</button>
 <div class="top"><h1>Obeya — przegląd portfela projektów</h1><div class="sub">Stan na ${formatDate(today)} · limit WIP: ${AppState.wipLimit} proj./osobę</div></div>
 <div class="kpi">
-  <div><b>${k.active}</b>aktywne na osi</div>
+  <div><b>${k.active}</b>w trakcie dziś</div>
   <div><b>${k.next90}</b>start w 90 dni</div>
   <div class="${k.red ? 'al' : ''}"><b>${k.red} / ${k.amber}</b>czerwone / żółte</div>
   <div class="${k.overloaded ? 'al' : ''}"><b>${k.overloaded}</b>osoby ponad limit</div>
