@@ -84,6 +84,22 @@ test('edytor karty: widzi ołówek tylko na swojej karcie, zapis innych kart jes
   await page.close2();
 });
 
+test('„Podgląd jako”: właściciel widzi jak edytor karty, nic nie zapisuje, po wyjściu znów jest właścicielem', async () => {
+  const gas = createGas();
+  seed(gas, proj('a', 'Karta Jana', { editors: [EDITOR] }), proj('b', 'Cudza'));
+  const page = await openPlaner(gas, { user: OWNER });
+  const who = () => page.evaluate(() => [Perm.role(), Perm.canManage(), document.body.classList.contains('tylko-odczyt'), document.querySelectorAll('.klocek.edytowalny').length]);
+  assert.deepEqual(await who(), ['owner', true, false, 2]);
+  await page.selectOption('#jakoWybor', EDITOR);
+  assert.deepEqual(await who(), ['editor', false, true, 1]);
+  await rename(page, 'b', 'HACK'); await page.waitForTimeout(1200);
+  assert.deepEqual(titles(gas), ['Cudza', 'Karta Jana']);
+  await page.selectOption('#jakoWybor', '');
+  await settle(page);
+  assert.deepEqual(await who(), ['owner', true, false, 2]);
+  await page.close2();
+});
+
 test('gość: tylko podgląd, nic nie wysyła do zapisu', async () => {
   const gas = createGas();
   seed(gas, proj('a', 'A'));

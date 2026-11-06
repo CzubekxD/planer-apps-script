@@ -236,7 +236,7 @@ const createPerm = cards => {   // cards() → wszystkie karty planu (do rozpozn
   const st = { user: '', owner: false, preview: '', offline: false };
   const lower = v => String(v || '').toLowerCase();
   const self = {
-    identify(user, isOwner) { st.user = lower(user); st.owner = !!isOwner; st.offline = false; },
+    identify(user, isOwner) { st.user = lower(user); st.owner = !!isOwner; st.preview = ''; st.offline = false; },
     goOffline() { st.user = ''; st.owner = false; st.preview = ''; st.offline = true; },
     previewAs(email) { st.preview = st.owner && !st.offline ? lower(email) : ''; },   // tylko prawdziwy właściciel
     get user() { return st.preview || st.user; },            // czyje oczy: podgląd albo ja
