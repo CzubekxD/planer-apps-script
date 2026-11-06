@@ -126,6 +126,19 @@ test('klocek za innym w tym samym wierszu (styk dat) zostaje obok', () => { cons
 test('zajęty wiersz: klocek schodzi niżej, nie nachodzi na inny', () => { const r = stack([SP('a', 0, 10, 0), SP('b', 5, 15, 0)]); eq(r.pos.get('a') !== r.pos.get('b'), true); });
 test('puste wiersze są ściągane (wiersz 7 przy 1 klocku = wiersz 1)', () => { const r = stack([SP('a', 0, 10, 7)]); eq([r.pos.get('a'), r.rows], [0, 1]); });
 test('przeniesienie do pasa innej osoby zmienia osobę w roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }, { group: 'team', role: 'Lider', person: 'Mati' }] }; moveToLane(p, 'Kupiec', 'Jan', 'Ewa'); eq(p.assignments.map(a => `${a.role}:${a.person}`), ['Lider:Mati', 'Kupiec:Ewa']); });
+// --- przesunięcie kafla (planMove): podgląd i upuszczenie liczą to samo ---
+const KP = (id, from, to, rowHint = null, person = 'Jan') => ({ ...SP(id, from, to, rowHint), title: id.toUpperCase(), status: 'planned', assignments: [{ group: 'team', role: 'Kupiec', person }] });
+const mv = (p, lane, o) => planMove({ project: p, start: p.start, laneItems: lane, winner: null, role: 'Kupiec', fromPerson: 'Jan', toPerson: 'Jan', otherLane: false, srcRow: 0, row: 0, ...o });
+test('przesunięcie: do nowego wiersza → rowHint i wiersz pod spodem', () => { const a = KP('a', 0, 10), b = KP('b', 20, 30); const r = mv(b, [a, b], { row: 1 }); eq([r.changes.rowHint, r.row, r.winner], [1, 1, 'b']); });
+test('przesunięcie: pas innej osoby → osoba w roli, wiersz w nowym pasie', () => { const a = KP('a', 0, 10), e = KP('e', 0, 10, null, 'Ewa'); const r = mv(a, [e], { toPerson: 'Ewa', otherLane: true, row: 0 }); eq([r.changes.assignments.map(x => x.person), r.row, a.assignments[0].person], [['Ewa'], 0, 'Jan']); });
+test('przesunięcie: wejście w zajęty wiersz spycha inny niżej', () => { const a = KP('a', 0, 10, 0), b = KP('b', 0, 10, 1); const r = mv(b, [a, b], { srcRow: 1, row: 0 }); eq([r.row, r.pushed], [0, ['A']]); });
+test('przesunięcie: tylko daty (bez zmiany wiersza) nie rusza rowHint', () => { const a = KP('a', 0, 10); const r = mv(a, [a], { start: L.addDays(a.start, 3) }); eq([L.toISO(r.changes.end), 'rowHint' in r.changes], [L.toISO(L.addDays(a.end, 3)), false]); });
+test('przesunięcie: podgląd = wynik — po applyMove render (stack) stawia kafel w przewidzianym wierszu', () => {
+  const keep = lastDropped;
+  try { [[0, 0], [0, 1], [1, 0], [5, 2]].forEach(([srcRow, row]) => { const a = KP('a', 0, 10, 0), b = KP('b', 5, 15, 1), c = KP('c', 2, 8); lastDropped = null; const plan = mv(c, [a, b, c], { srcRow, row, winner: lastDropped }); applyMove(c, plan); eq(stack([a, b, c], lastDropped).pos.get('c'), plan.row); }); }
+  finally { lastDropped = keep; }
+});
+test('zakończonego projektu nie da się przeciągnąć', () => eq([canDrag({ status: 'done' }), canDrag({ status: 'ongoing' }), canDrag({ status: 'planned' })], [false, true, true]));
 test('przeniesienie do „nieprzypisane” usuwa osobę z tej roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }] }; moveToLane(p, 'Kupiec', 'Jan', ''); eq(p.assignments, []); });
 test('dziennik: zmiana miejsca w pasie jest opisana', () => { const a = P0(), b = P0(); b.tabs[0].projects[0].rowHint = 2; eq(PLAN_LIB.describeChanges(a, b), ['„Moja karta Jana”: miejsce w pasie']); });
 
@@ -260,5 +273,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06g) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06g');
+// ===== KONIEC js-testy (wersja 2026-11-06h) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06h');

@@ -4,7 +4,7 @@
 // START — wczytanie planu z Arkusza i pierwszy render
 // Kontrola wklejenia: każdy plik zgłasza się na końcu swoją wersją. Brak/inna wersja = plik do ponownego wklejenia.
 const PLANER_VERSION = '2026-11-06';   // wersja serwera (Code, PlanLib)
-const PLANER_FILES = { 'js-sesja': '2026-11-06c', 'js-model': '2026-11-06g', 'js-os': '2026-11-06g', 'js-karta': '2026-11-06g', 'js-portfel': '2026-11-06f', 'js-historia': '2026-11-06g', 'js-miary': '2026-11-06f', 'js-testy': '2026-11-06g' };
+const PLANER_FILES = { 'js-sesja': '2026-11-06c', 'js-model': '2026-11-06h', 'js-os': '2026-11-06h', 'js-karta': '2026-11-06h', 'js-portfel': '2026-11-06f', 'js-historia': '2026-11-06h', 'js-miary': '2026-11-06f', 'js-testy': '2026-11-06h' };
 function checkParts() {
   const got = new Set(window.__planerParts);
   const bad = Object.entries(PLANER_FILES).filter(([n, v]) => !got.has(`${n}@${v}`)).map(([n]) => n);
