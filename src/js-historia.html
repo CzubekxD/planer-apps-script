@@ -20,9 +20,8 @@ function setJako(email) {
   applyPerm();
   // Wyjście z podglądu = świeży stan z Arkusza; po błędzie zapisu zostaje ekran (niezapisane zmiany), bez wczytywania
   if (!Preview.as && !(session && session.stopped())) { loaded = false; return load(renderAll); }
-  if (!Preview.as) { renderAll(); return; }
   renderAll();
-  statusEl.textContent = `Podgląd jako ${Preview.as} — zmiany nie są zapisywane`;
+  if (Preview.as) statusEl.textContent = `Podgląd jako ${Preview.as} — zmiany nie są zapisywane`;
 }
 f('jakoWybor').addEventListener('change', e => setJako(e.target.value));
 
@@ -76,5 +75,5 @@ f('historiaZamknij').addEventListener('click', closeHistory);
 f('historiaModal').addEventListener('mousedown', e => { if (e.target === f('historiaModal')) closeHistory(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHistory(); });
 
-// ===== KONIEC js-historia (wersja 2026-11-06h) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-historia@2026-11-06h');
+// ===== KONIEC js-historia (wersja 2026-11-06j) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-historia@2026-11-06j');

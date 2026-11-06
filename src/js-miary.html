@@ -13,7 +13,7 @@ function metrics() {
   const lts = done.map(x => x.lt);
   const P = { p50: pctl(lts, .5), p85: pctl(lts, .85), p95: pctl(lts, .95) };
   const ongoingNow = projectsOngoingOn(all, today);
-  const active = ongoingNow.filter(p => p.startedAt).map(p => ({ p, age: TERM.days(p.startedAt, TERM.endAfter(today)) })).sort((a, b) => b.age - a.age);
+  const ages = ongoingNow.filter(p => p.startedAt).map(p => ({ p, age: TERM.days(p.startedAt, TERM.endAfter(today)) })).sort((a, b) => b.age - a.age);
   const stMonths = statusByMonth(AppState.projects, today);
   const months = []; for (let i = 11; i >= 0; i--) { const from = new Date(today.getFullYear(), today.getMonth() - i, 1), to = new Date(today.getFullYear(), today.getMonth() - i + 1, 1); months.push({ from, label: mies(from), n: done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length }); }
   const tp = []; for (let i = 0; i < 26; i++) { const to = addDays(today, -7 * i), from = addDays(to, -7); tp.push(done.filter(x => x.p.doneAt >= from && x.p.doneAt < to).length); }
@@ -34,7 +34,7 @@ function metrics() {
     return { p, d50: w50 != null ? addDays(today, 7 * w50) : null, d85: w85 != null ? addDays(today, 7 * w85) : null, target: TERM.lastDay(p.end), rcf: (R.r85 && p.start && p.end) ? addDays(p.start, Math.round(TERM.days(p.start, p.end) * R.r85)) : null };
   });
   const inProgressNow = ongoingNow.length;
-  return { today, done, lts, P, active, stMonths, months, tp, ratios, onTime, R, mc, inProgressNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
+  return { today, done, lts, P, ages, stMonths, months, tp, ratios, onTime, R, mc, inProgressNow, tpMean: tp.reduce((a, b) => a + b, 0) / tp.length };
 }
 
 // Projekty wg statusu w miesiącach: 12 wstecz (z bieżącym) + 3 do przodu.
@@ -124,13 +124,13 @@ function svgScatter(done, P, { h = 220 } = {}) {
   s.push(`<line class="os" x1="${pad.l}" x2="${W - pad.r}" y1="${pad.t + hh}" y2="${pad.t + hh}"/><text x="${pad.l - 6}" y="${pad.t + 10}" text-anchor="end">dni</text></svg>`);
   return s.join('');
 }
-function ageRows(active, P) {
-  if (!active.length) return '<div class="pusto">Brak projektów w trakcie z datą startu.</div>';
-  const max = Math.max(P.p95 || 0, ...active.map(a => a.age)) * 1.05;
+function ageRows(ages, P) {
+  if (!ages.length) return '<div class="pusto">Brak projektów w trakcie z datą startu.</div>';
+  const max = Math.max(P.p95 || 0, ...ages.map(a => a.age)) * 1.05;
   const pc = v => `${Math.min(100, (v / max) * 100)}%`;
   const vars = `--a50:${pc(P.p50 || 0)};--a85:${pc(P.p85 || 0)}`;
   let s = `<div class="wiek" style="${vars}">`;
-  active.forEach(a => { s += `<div class="wiek-w"><div class="t" title="${esc(a.p.title)}">${esc(a.p.title)}</div><div class="wiek-tor"><i class="${a.age > P.p85 ? 'zly' : ''}" style="width:${pc(a.age)}"></i></div><div class="n">${a.age} d</div></div>`; });
+  ages.forEach(a => { s += `<div class="wiek-w"><div class="t" title="${esc(a.p.title)}">${esc(a.p.title)}</div><div class="wiek-tor"><i class="${a.age > P.p85 ? 'zly' : ''}" style="width:${pc(a.age)}"></i></div><div class="n">${a.age} d</div></div>`; });
   s += `<div class="wiek-skala"><div></div><div>${[['LT50', P.p50], ['LT85', P.p85], ['LT95', P.p95]].filter(x => x[1]).map(([n, v]) => `<em style="left:${pc(v)}">${n} ${v} d</em>`).join('')}</div><div></div></div>`;
   return s + '</div>';
 }
@@ -160,8 +160,8 @@ function slipList(done) {
 
 // ---------- pulpit ----------
 function pulpit(m) {
-  const stuck = m.active.filter(a => a.age > m.P.p85).length;
-  return `<p class="mi-uwaga">Liczone z zakładki „${esc((curTab() || {}).title || '')}”: ${m.done.length} zakończonych, ${m.active.length} w trakcie, ${m.mc.length} planowanych.</p>
+  const stuck = m.ages.filter(a => a.age > m.P.p85).length;
+  return `<p class="mi-uwaga">Liczone z zakładki „${esc((curTab() || {}).title || '')}”: ${m.done.length} zakończonych, ${m.ages.length} w trakcie, ${m.mc.length} planowanych.</p>
   <div class="mi-kpi">
     <div><b>${m.P.p85 ?? '—'} d</b><span>LT85 — 85% projektów kończy się w tylu dniach</span></div>
     <div><b>${m.inProgressNow}</b><span>Projekty w toku</span></div>
@@ -171,7 +171,7 @@ function pulpit(m) {
     <div><b>${fmtX(m.R.r85)}</b><span>Poślizg P85: faktyczny / planowany</span></div>
   </div>
   <div class="mi-grid">
-    <div class="mi-karta szer"><h3>Wiek projektów w trakcie</h3><div class="pod">Pas: zielony do LT50, żółty do LT85, czerwony powyżej. Czerwony słupek = projekt utknął.</div>${malo(m.done.length)}${ageRows(m.active, m.P)}</div>
+    <div class="mi-karta szer"><h3>Wiek projektów w trakcie</h3><div class="pod">Pas: zielony do LT50, żółty do LT85, czerwony powyżej. Czerwony słupek = projekt utknął.</div>${malo(m.done.length)}${ageRows(m.ages, m.P)}</div>
     <div class="mi-karta szer mi-status"><div class="st-naglowek"><div><h3>Projekty wg statusu w miesiącach</h3><div class="pod">${stWykres === 'przeplyw' ? 'Przepływ: zakończone narastająco, nad nimi w trakcie i planowane. Grubość niebieskiego pasa = projekty w toku.' : 'Stan w miesiącu: ile projektów było planowanych (na koniec miesiąca), w trakcie i zakończonych.'} 12 miesięcy wstecz i 3 do przodu wg terminów z kart (jaśniej).</div></div>
       <div class="widok-przel st-przel">${[['stan', 'Stan w miesiącu'], ['przeplyw', 'Przepływ']].map(([k, l]) => `<button type="button" class="btn btn-secondary btn-maly${stWykres === k ? ' on' : ''}" aria-pressed="${stWykres === k}" onclick="setStWykres('${k}')">${l}</button>`).join('')}</div></div>
       <div class="st-legenda"><span><i class="st-zak"></i>Zakończone</span><span><i class="st-trwa"></i>W trakcie</span><span><i class="st-plan"></i>Planowane</span></div>
@@ -217,5 +217,5 @@ document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => b.addEven
 applyWidok();
 renderAll();
 
-// ===== KONIEC js-miary (wersja 2026-11-06f) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-miary@2026-11-06f');
+// ===== KONIEC js-miary (wersja 2026-11-06j) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-miary@2026-11-06j');
