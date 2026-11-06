@@ -2,10 +2,11 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06l**
+Aktualna paczka: **2026-11-06m**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Miary | Testy wykresu „Projekty wg statusu w miesiącach” (#1): zakończony bez daty zakończenia, projekt wystartowany w miesiącu (jeden stan na projekt) oraz oba warianty wykresu z przełącznikiem w obie strony (e2e). Działanie bez zmian. Opis w #1 doprecyzowany do zachowania kodu: w trakcie po terminie zostaje w trakcie, „planowane” to stan projektu w miesiącu, nie na koniec miesiąca. | js-testy, js-start |
 | 06.11 | Portfel | Zapisana reguła (#5): planowany, któremu minęła data startu, a nikt go nie zaczął, zostaje planowanym od dziś w przód — szare „+N” na heatmapie i „planowany” w Miarach w bieżącym i przyszłych miesiącach (założenie [Z-21] w SPEC, opis w CONTEXT). Jeden wspólny test portfela sprawdza naraz heatmapę, decyzje, KPI i Miary. Działanie planera bez zmian. | js-testy, js-start |
 | 06.11 | Portfel | Nowy kafelek KPI „Zakończone z opóźnieniem (90 dni)” (#2): projekty zakończone w ostatnich 90 dniach po końcu planu pierwotnego. „Opóźnione” zostaje tylko dla projektów w trakcie. | js-portfel, js-testy, js-start |
 | 06.11 | Porządki | Zgłoszenie #11: jedno `renderAll()` w „Podgląd jako” (bez zmiany działania) oraz jedno znaczenie nazw: „w trakcie” to `ongoing` w KPI i decyzjach Portfela, lista wieku w Miarach to `ages`, okno Obeya to `obeyaRows`. Działanie bez zmian. | js-historia, js-portfel, js-miary, js-testy, js-start |
