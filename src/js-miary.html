@@ -37,40 +37,16 @@ function metrics() {
 }
 
 // Projekty wg statusu w miesiącach: 12 wstecz (z bieżącym) + 3 do przodu.
-// Przeszłość i bieżący miesiąc = faktyczny stan (zobowiązanie, zakończenie, historia statusów); przyszłość = termin z karty.
-// Każdy projekt w danym miesiącu ma najwyżej jeden stan: zakończony > w trakcie > planowany (stan na koniec miesiąca).
+// Stan każdego projektu w miesiącu: stateInPeriod (js-model).
 function statusByMonth(projects, today) {
   const rows = [];
   for (let i = -11; i <= 3; i++) {
     const from = new Date(today.getFullYear(), today.getMonth() + i, 1), to = new Date(today.getFullYear(), today.getMonth() + i + 1, 1);
     const row = { from, future: i > 0, planned: 0, ongoing: 0, done: 0 };
-    projects.filter(hasDates).forEach(p => {
-      const st = i > 0 ? forecastStatus(p, from, to, today) : actualStatus(p, from, i === 0 ? addDays(today, 1) : to, i === 0);
-      if (st) row[st]++;
-    });
+    projects.forEach(p => { const st = stateInPeriod(p, from, to, today); if (st) row[st]++; });
     rows.push(row);
   }
   return rows;
-}
-// Stan w miesiącu [from, cut): cut = początek następnego miesiąca albo jutro (bieżący miesiąc)
-function actualStatus(p, from, cut, isNow) {
-  if (p.doneAt && p.doneAt >= from && p.doneAt < cut) return 'done';
-  if (p.doneAt && p.doneAt < from) return null;
-  const started = p.startedAt || (p.status !== 'planned' ? p.start : null);
-  if (started && started < cut) return 'ongoing';
-  const dates = p.history.map(h => fromLocalISO(h.date)).filter(Boolean);
-  const created = dates.length ? new Date(Math.min(...dates)) : null;
-  return (created ? created < cut : isNow) ? 'planned' : null;   // bez historii nie wiemy, od kiedy istnieje — liczymy tylko bieżący miesiąc
-}
-// Przyszły miesiąc wg terminu z karty. Termin, który już minął, nie zmienia stanu: w trakcie zostaje w trakcie, planowany planowanym (do zobowiązania)
-function forecastStatus(p, from, to, today) {
-  if (p.status === 'done') return null;
-  if (p.status === 'ongoing' && p.end <= today) return 'ongoing';
-  if (p.status === 'planned' && p.start < today) return 'planned';
-  const last = addDays(p.end, -1);
-  if (last >= from && last < to) return 'done';
-  if (p.start < to && p.end > from) return 'ongoing';
-  return p.status === 'planned' && p.start >= to ? 'planned' : null;
 }
 
 // ---------- mini-wykresy SVG ----------
@@ -240,5 +216,5 @@ document.querySelectorAll('.widok-przel .btn[data-view]').forEach(b => b.addEven
 applyWidok();
 renderAll();
 
-// ===== KONIEC js-miary (wersja 2026-11-06b) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-miary@2026-11-06b');
+// ===== KONIEC js-miary (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-miary@2026-11-06e');

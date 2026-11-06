@@ -135,6 +135,32 @@ test('cykl: nowy obiekt nie dzieli z poprzednim osób, kamieni ani pól metody',
 });
 test('cykl: zapis karty nie zmienia poprzedniego obiektu (Anuluj = bez skutków)', () => { const p = W_TRAKCIE(), przed = JSON.stringify(serProject(p)); saveCard(p, CY_KARTA('done'), CY_DZIS, { rebaseline: true }); eq(JSON.stringify(serProject(p)), przed); });
 
+// --- stan projektu w okresie: jeden portfel, cztery widoki (CONTEXT.md: Limit WIP, Projekty w toku) ---
+const SO_DZIS = D(2026, 11, 15);
+const SO = (status, osoba, extra) => normProject({ title: extra.title, status, assignments: [{ group: 'team', role: 'Kupiec', person: osoba }], ...extra });
+const SO_PORTFEL = () => [
+  SO('ongoing', 'Jan', { title: 'A w trakcie', start: '2026-10-01', end: '2026-12-01', startedAt: '2026-10-01' }),
+  SO('ongoing', 'Jan', { title: 'B po terminie', start: '2026-09-01', end: '2026-11-01', startedAt: '2026-09-01' }),
+  SO('done', 'Jan', { title: 'C zakończony w listopadzie', start: '2026-10-15', end: '2026-12-15', startedAt: '2026-10-15', doneAt: '2026-11-10' }),
+  SO('planned', 'Jan', { title: 'D planowany po dacie startu', start: '2026-11-01', end: '2026-12-20' }),
+  SO('planned', 'Ewa', { title: 'E planowany', start: '2026-12-05', end: '2027-01-10' }),
+  SO('ongoing', 'Ewa', { title: 'F w trakcie', start: '2026-11-10', end: '2027-01-01', startedAt: '2026-11-10' })
+];
+const SO_MIES = [{ from: D(2026, 11, 1), to: D(2026, 12, 1), label: 'Lis' }, { from: D(2026, 12, 1), to: D(2027, 1, 1), label: 'Gru' }];
+test('stan: obciążenie liczy tylko w trakcie (także zakończony w tym miesiącu i po terminie), planowane osobno', () =>
+  eq(computeLoad(SO_MIES, SO_PORTFEL(), SO_DZIS).map(r => `${r.name} w trakcie:${r.counts} planowane:${r.planned}`), ['Jan w trakcie:3,1 planowane:1,1', 'Ewa w trakcie:1,1 planowane:0,1']));
+test('stan: „Przeciążenie” tylko z projektów w trakcie', () =>
+  eq(computeDecisions(SO_PORTFEL(), SO_DZIS, SO_MIES).filter(d => d.typ === 'Przeciążenie').map(d => d.text.split(' —')[0]), ['Jan: 3 równoległych projektów w Lis (limit 2)']));
+test('stan: „Aktywne” = w trakcie dziś (planowany po dacie startu się nie liczy)', () => {
+  const ps = SO_PORTFEL();
+  const k = computeKpi(computeDecisions(ps, SO_DZIS, SO_MIES), ps, SO_DZIS, SO_MIES.slice(0, 1));
+  eq([k.active, k.overloaded], [3, 1]);
+});
+test('stan: Miary na tym samym portfelu (listopad: 2 planowane, 3 w trakcie, 1 zakończony)', () => {
+  const r = statusByMonth(SO_PORTFEL(), SO_DZIS).find(x => L.toISO(x.from) === '2026-11-01');
+  eq([r.planned, r.ongoing, r.done], [2, 3, 1]);
+});
+
 // --- opóźnienie (CONTEXT.md: „Opóźnienie”) ---
 const OP = (status, extra) => ({ status, baselineEnd: D(2026, 12, 1), end: D(2026, 12, 1), doneAt: null, ...extra });
 test('opóźnienie: w trakcie z końcem przesuniętym o 10 dni = +10', () => eq(delayDays(OP('ongoing', { end: D(2026, 12, 11) })), 10));
@@ -194,5 +220,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06d');
+// ===== KONIEC js-testy (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06e');

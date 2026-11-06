@@ -205,8 +205,6 @@ const pxToDate = (px) => DATE_LIB.fromPx(px, axisNow());
 // Opóźnienie wobec planu pierwotnego (planowany go nie ma); zakończony liczy się od faktycznej daty zakończenia (koniec w danych jest wyłączny)
 const actualEnd = p => (p.status === 'done' && p.doneAt) ? addDays(p.doneAt, 1) : p.end;
 const delayDays = p => (p.status !== 'planned' && p.baselineEnd && actualEnd(p)) ? diffDays(p.baselineEnd, actualEnd(p)) : 0;
-// Koniec efektywny do obciążenia: faktyczny koniec, ale nie później niż termin z karty
-const effEnd = p => new Date(Math.min(p.end, actualEnd(p)));
 const viewEnd = () => new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + AppState.horizonMonths, 1);
 const trackWidth = () => dateToPx(viewEnd());
 // Domyślna szerokość klocka po pojedynczym kliknięciu (bez przeciągania)
@@ -435,6 +433,37 @@ function saveCard(prev, data, today, { id, rebaseline = false } = {}) {
   else if (!wasCommitted || !p.baselineStart || rebaseline) { p.baselineStart = new Date(p.start); p.baselineEnd = new Date(p.end); }
   return lifecycleInvariants(p);
 }
+// STAN PROJEKTU W OKRESIE (CONTEXT.md: W trakcie, Projekty w toku, Limit WIP). Jedyne miejsce, które odpowiada na pytanie
+// „czy projekt był / będzie w trakcie w tym okresie”. Korzystają: obciążenie i decyzje (portfel), „Aktywne”, Miary.
+// W trakcie = od zobowiązania do faktycznego zakończenia; projekt w trakcie po terminie z karty zostaje w trakcie (także w przyszłości).
+// Planowany nigdy nie jest w trakcie (nie obciąża ludzi), ale ma swój termin z karty (plannedIn).
+function ongoingSpan(p, today) {
+  if (p.status === 'planned' || !hasDates(p)) return null;
+  return [p.startedAt || p.start, p.status === 'done' ? actualEnd(p) : (p.end > today ? p.end : Infinity)];
+}
+const ongoingIn = (p, from, to, today) => { const s = ongoingSpan(p, today); return !!s && s[0] < to && s[1] > from; };
+const plannedIn = (p, from, to) => p.status === 'planned' && hasDates(p) && p.start < to && p.end > from;
+// Jeden stan na okres (Miary): zakończony > w trakcie > planowany (na koniec okresu). Przeszłość i bieżący okres = faktyczny stan,
+// przyszłość = termin z karty (termin, który już minął, nie zmienia stanu).
+function stateInPeriod(p, from, to, today) {
+  if (!hasDates(p)) return null;
+  if (from > today) {
+    if (p.status === 'done') return null;
+    if (p.status === 'ongoing' && p.end <= today) return 'ongoing';
+    if (p.status === 'planned' && p.start < today) return 'planned';
+    const last = addDays(p.end, -1);
+    if (last >= from && last < to) return 'done';
+    if (p.start < to && p.end > from) return 'ongoing';
+    return p.status === 'planned' && p.start >= to ? 'planned' : null;
+  }
+  const cut = to > today ? addDays(today, 1) : to;   // bieżący okres liczy się do dziś
+  if (p.doneAt && p.doneAt >= from && p.doneAt < cut) return 'done';
+  if (p.doneAt && p.doneAt < from) return null;
+  if (ongoingIn(p, from, cut, today)) return 'ongoing';
+  const dates = p.history.map(h => fromLocalISO(h.date)).filter(Boolean);
+  const created = dates.length ? new Date(Math.min(...dates)) : null;
+  return (created ? created < cut : to > today) ? 'planned' : null;   // bez historii nie wiemy, od kiedy istnieje — liczymy tylko bieżący okres
+}
 const hasPlan = d => d && (Array.isArray(d.tabs) || Array.isArray(d.projects));
 
 function applyData(data) {
@@ -553,5 +582,5 @@ function load(done) {
       });
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06d) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06d');
+// ===== KONIEC js-model (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06e');

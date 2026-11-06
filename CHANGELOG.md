@@ -2,10 +2,11 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06d**
+Aktualna paczka: **2026-11-06e**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Portfel | Jedna definicja „w trakcie” dla heatmapy, limitu WIP, decyzji, KPI i Miar (#5). Limit WIP, „Przeciążenie” i kafelek „W trakcie dziś” (dawniej „Aktywne na osi”) liczą tylko projekty w trakcie; planowane na heatmapie jako szare „+N”. | js-model, js-portfel, js-miary, js-testy, Index, Styles, js-start |
 | 06.11 | Karta projektu | Reguły statusu, zobowiązania i planu pierwotnego w jednym miejscu, z testem każdej zmiany statusu (#4). „Nowy plan pierwotny” wchodzi dopiero po Zapisz, Anuluj go wyrzuca, a okno pyta o niezapisane zmiany. | js-karta, js-model, js-testy, js-start |
 | 06.11 | Zapis | Cały zapis do Arkusza w nowym pliku js-sesja (#3). Przywrócenie z Historii w trakcie zapisu czeka na zapis zamiast mieszać wersje; po zapisie edytora karty planer zna prawdziwy stan Arkusza; render bez zmian nie wysyła zapisu; zmiana zrobiona w trakcie odświeżania albo przywracania nie ginie; po błędzie zapisu wyjście z „Podgląd jako” nie podmienia ekranu (status zawsze „ZAPIS NIEUDANY”). **Nowy plik do dodania w edytorze: js-sesja.** | js-sesja (nowy), Index, js-model, js-historia, js-start |
 | 06.11 | Miary | Zamiast wykresu „WIP portfela”: projekty wg statusu w miesiącach (12 wstecz + 3 do przodu) z przełącznikiem Stan w miesiącu / Przepływ; kafelek „Projekty w toku” bez czerwonego alarmu; w Miarach „zakończone” zamiast „zamknięte” (#1). | js-miary, Styles, js-testy, js-start |

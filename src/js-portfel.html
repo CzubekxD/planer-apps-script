@@ -4,7 +4,6 @@
 // 8. PORTFEL I ANALITYKA
 const MONTH_NAMES = ["Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru"];
 const startOfToday = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
-const isActiveInRange = (p, from, to) => hasDates(p) && p.start < to && effEnd(p) > from;
 
 function teamPeople(p) {
   const seen = new Map();
@@ -23,29 +22,30 @@ function heatMonths(count) {
   return res;
 }
 
-function computeLoad(months) {
+// Obciążenie osoby z Zespołu w miesiącu (w obrębie zakładki): counts = projekty w trakcie (do limitu WIP), planned = planowane (tylko podgląd)
+function computeLoad(months, projects = AppState.projects, today = startOfToday()) {
   const people = new Map();
-  AppState.projects.forEach(p => {
+  projects.forEach(p => {
     teamPeople(p).forEach((name, key) => {
-      if (!people.has(key)) people.set(key, { name, counts: months.map(() => 0), projects: months.map(() => []) });
+      if (!people.has(key)) people.set(key, { name, counts: months.map(() => 0), projects: months.map(() => []), planned: months.map(() => 0), plannedProjects: months.map(() => []) });
       const rec = people.get(key);
       months.forEach((m, i) => {
-        if (isActiveInRange(p, m.from, m.to)) { rec.counts[i]++; rec.projects[i].push(p.title); }
+        if (ongoingIn(p, m.from, m.to, today)) { rec.counts[i]++; rec.projects[i].push(p.title); }
+        else if (plannedIn(p, m.from, m.to)) { rec.planned[i]++; rec.plannedProjects[i].push(p.title); }
       });
     });
   });
   return [...people.values()]
-    .filter(r => r.counts.some(c => c > 0))
+    .filter(r => r.counts.some(c => c > 0) || r.planned.some(c => c > 0))
     .sort((a, b) => Math.max(...b.counts) - Math.max(...a.counts) || a.name.localeCompare(b.name, 'pl'));
 }
 
-function computeDecisions() {
-  const today = startOfToday();
+function computeDecisions(projects = AppState.projects, today = startOfToday(), months = heatMonths(2)) {
   const in30 = addDays(today, 30);
   const out = [];
   const add = (prio, typ, p, text) => out.push({ prio, typ, project: p, title: p ? p.title : null, text });
 
-  AppState.projects.filter(p => hasDates(p) && p.status !== 'done' && p.end > today).forEach(p => {
+  projects.filter(p => hasDates(p) && p.status !== 'done' && p.end > today).forEach(p => {
     const active = p.start <= today;
     const startsSoon = p.start > today && p.start <= in30;
     const d = delayDays(p);
@@ -60,8 +60,7 @@ function computeDecisions() {
     p.milestones.filter(m => !m.done && m.date < today).forEach(m => add(diffDays(m.date, today) > 14 ? 1 : 2, 'Kamień milowy', p, `„${m.name}” po terminie o ${diffDays(m.date, today)} dni (${formatDate(m.date)}).`));
   });
 
-  const months = heatMonths(2);
-  computeLoad(months).forEach(r => {
+  computeLoad(months, projects, today).forEach(r => {
     r.counts.forEach((c, i) => {
       if (c > AppState.wipLimit) add(1, 'Przeciążenie', null, `${r.name}: ${c} równoległych projektów w ${months[i].label} (limit ${AppState.wipLimit}) — ${r.projects[i].join(', ')}.`);
     });
@@ -70,12 +69,11 @@ function computeDecisions() {
   return out.sort((a, b) => a.prio - b.prio);
 }
 
-function computeKpi(decisions) {
-  const today = startOfToday();
-  const valid = AppState.projects.filter(hasDates);
-  const active = valid.filter(p => p.status !== 'done' && p.start <= today && p.end > today);
+function computeKpi(decisions, projects = AppState.projects, today = startOfToday(), months = heatMonths(1)) {
+  const valid = projects.filter(hasDates);
+  const active = valid.filter(p => ongoingIn(p, today, addDays(today, 1), today));   // w trakcie dziś; planowany po dacie startu się nie liczy
   const next90 = valid.filter(p => p.start > today && p.start <= addDays(today, 90));
-  const load = computeLoad(heatMonths(1));
+  const load = computeLoad(months, projects, today);
   return {
     active: active.length,
     next90: next90.length,
@@ -92,7 +90,7 @@ function renderPortfolio() {
   const k = computeKpi(decisions);
 
   f('portfelKpi').innerHTML = [
-    ['Aktywne na osi', k.active, false],
+    ['W trakcie dziś', k.active, false],
     ['Start w 90 dni', k.next90, false],
     ['Opóźnione', k.delayed, k.delayed > 0],
     ['Czerwone / żółte', `${k.red} / ${k.amber}`, k.red > 0],
@@ -120,7 +118,7 @@ function renderPortfolio() {
   const cls = c => c === 0 ? '' : c < AppState.wipLimit ? 'c1' : c === AppState.wipLimit ? 'c2' : 'c3';
   wrap.innerHTML = `<table class="heat"><thead><tr><th class="osoba">Osoba</th>${months.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr></thead><tbody>${
     load.map(r => `<tr><td class="osoba">${esc(r.name)}</td>${r.counts.map((c, i) =>
-      `<td class="${cls(c)}" title="${esc(r.projects[i].join('\n'))}">${c || ''}</td>`).join('')}</tr>`).join('')
+      `<td class="${cls(c)}" title="${esc([...r.projects[i], ...r.plannedProjects[i].map(t => `planowany: ${t}`)].join('\n'))}">${c || ''}${r.planned[i] ? `<span class="heat-plan">+${r.planned[i]}</span>` : ''}</td>`).join('')}</tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -257,5 +255,5 @@ f('importPlik').addEventListener('change', async (e) => {
   } catch (err) { alert('Nie udało się zaimportować: ' + err.message); }
 });
 
-// ===== KONIEC js-portfel (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-portfel@2026-11-06');
+// ===== KONIEC js-portfel (wersja 2026-11-06e) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-portfel@2026-11-06e');

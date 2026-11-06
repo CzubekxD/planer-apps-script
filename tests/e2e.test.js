@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 79, `testów: ${res.length}`);   // stan na paczkę 06d: 79
+  assert.ok(res.length >= 83, `testów: ${res.length}`);   // stan na paczkę 06e: 83
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);
@@ -222,5 +222,20 @@ test('karta: edytor karty może przyjąć nowy plan pierwotny swojej karty; napi
   await settle(page);
   const p = gas.storedPlan().tabs[0].projects[0];
   assert.equal(`${p.baselineStart}..${p.baselineEnd}`, '2026-11-09..2026-12-15');
+  await page.close2();
+});
+
+test('portfel: heatmapa liczy tylko w trakcie, planowane jako szare „+N”; „W trakcie dziś” bez planowanego po dacie startu', async () => {
+  const gas = createGas();
+  const pad = n => String(n).padStart(2, '0'), iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const day = n => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n); return iso(d); };
+  seed(gas,
+    proj('a', 'W trakcie', { status: 'ongoing', start: day(-20), end: day(40), startedAt: day(-20), baselineStart: day(-20), baselineEnd: day(40) }),
+    proj('b', 'Planowany po dacie startu', { start: day(-5), end: day(40) }));
+  const page = await openPlaner(gas);
+  const kpi = await page.evaluate(() => [...document.querySelectorAll('#portfelKpi .kpi-tile')].map(t => `${t.querySelector('.l').textContent}=${t.querySelector('.v').textContent}`));
+  assert.ok(kpi.includes('W trakcie dziś=1'), kpi.join(' | '));
+  const komorka = await page.locator('#heatWrap tbody tr').first().locator('td').nth(1).textContent();
+  assert.equal(komorka, '1+1', 'bieżący miesiąc: 1 w trakcie, +1 planowany');
   await page.close2();
 });
