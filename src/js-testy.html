@@ -101,6 +101,29 @@ test('przeniesienie do pasa innej osoby zmienia osobę w roli', () => { const p 
 test('przeniesienie do „nieprzypisane” usuwa osobę z tej roli', () => { const p = { assignments: [{ group: 'team', role: 'Kupiec', person: 'Jan' }] }; moveToLane(p, 'Kupiec', 'Jan', ''); eq(p.assignments, []); });
 test('dziennik: zmiana miejsca w pasie jest opisana', () => { const a = P0(), b = P0(); b.tabs[0].projects[0].rowHint = 2; eq(PLAN_LIB.describeChanges(a, b), ['„Moja karta Jana”: miejsce w pasie']); });
 
+// --- opóźnienie (CONTEXT.md: „Opóźnienie”) ---
+const OP = (status, extra) => ({ status, baselineEnd: D(2026, 12, 1), end: D(2026, 12, 1), doneAt: null, ...extra });
+test('opóźnienie: w trakcie z końcem przesuniętym o 10 dni = +10', () => eq(delayDays(OP('ongoing', { end: D(2026, 12, 11) })), 10));
+test('opóźnienie: planowany nie ma opóźnienia', () => eq(delayDays(OP('planned', { end: D(2026, 12, 11) })), 0));
+test('opóźnienie: zakończony 10 dni przed planem (koniec na karcie nieruszony) = −10', () => eq(delayDays(OP('done', { doneAt: D(2026, 11, 20) })), -10));
+test('opóźnienie: zakończony 5 dni po planie (koniec na karcie nieruszony) = +5', () => eq(delayDays(OP('done', { doneAt: D(2026, 12, 5) })), 5));
+test('opóźnienie: zakończony bez daty zakończenia liczy się od końca na karcie', () => eq(delayDays(OP('done', { end: D(2026, 12, 4) })), 3));
+
+// --- Miary: projekty wg statusu w miesiącach (12 wstecz z bieżącym + 3 do przodu) ---
+const SM = (status, extra) => normProject({ title: 'x', status, assignments: [], ...extra });
+const SM_PORTFEL = [
+  SM('done', { start: '2026-09-10', end: '2026-10-06', startedAt: '2026-09-10', doneAt: '2026-10-05', history: [{ date: '2026-08-01', status: 'planned' }] }),
+  SM('ongoing', { start: '2026-10-20', end: '2027-01-10', startedAt: '2026-10-20', history: [{ date: '2026-10-01', status: 'planned' }] }),
+  SM('planned', { start: '2026-12-15', end: '2027-01-31', history: [{ date: '2026-11-02', status: 'planned' }] }),
+  SM('planned', { start: '2027-03-01', end: '2027-04-01' }),
+  SM('planned', {})
+];
+const smRows = rows => rows.filter(r => r.planned + r.ongoing + r.done).map(r => `${L.toISO(r.from).slice(0, 7)}${r.future ? '*' : ''} P${r.planned} T${r.ongoing} Z${r.done}`);
+test('miary: 15 miesięcy, od grudnia rok temu do lutego, trzy ostatnie to przyszłość', () => { const r = statusByMonth(SM_PORTFEL, D(2026, 11, 15)); eq([r.length, L.toISO(r[0].from), L.toISO(r[14].from), r.map(x => x.future).join('').replace(/false/g, '-').replace(/true/g, '+')], [15, '2025-12-01', '2027-02-01', '------------+++']); });
+test('miary: planowany → w trakcie → zakończony, miesiąc po miesiącu', () => eq(smRows(statusByMonth(SM_PORTFEL, D(2026, 11, 15))), [
+  '2026-08 P1 T0 Z0', '2026-09 P0 T1 Z0', '2026-10 P0 T1 Z1', '2026-11 P2 T1 Z0', '2026-12* P1 T2 Z0', '2027-01* P1 T0 Z2', '2027-02* P1 T0 Z0']));
+test('miary: pusty portfel = same zera', () => eq(smRows(statusByMonth([], D(2026, 11, 15))), []));
+
 // --- scalanie przy konflikcie zapisu (dwie osoby / dwie karty naraz) ---
 const MP = (...projects) => ({ wipLimit: 2, horizonMonths: 20, tabs: [{ id: 't1', title: 'Portfolio', projects: projects.map(([id, title]) => ({ id, title })) }] });
 const titles = r => r.plan.tabs[0].projects.map(p => p.title);
@@ -127,5 +150,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06');
+// ===== KONIEC js-testy (wersja 2026-11-06b) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06b');

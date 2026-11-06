@@ -2,10 +2,12 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06**
+Aktualna paczka: **2026-11-06b**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Miary | Zamiast wykresu „WIP portfela”: projekty wg statusu w miesiącach (12 wstecz + 3 do przodu) z przełącznikiem Stan w miesiącu / Przepływ; kafelek „Projekty w toku” bez czerwonego alarmu (#1). | js-miary, Styles, js-testy, js-start |
+| 06.11 | Opóźnienie | Zakończony projekt liczy opóźnienie od faktycznej daty zakończenia, nie od końca na karcie (#2). | js-model, js-testy, js-start |
 | 06.11 | Porządki | Bez nazwy firmy w kodzie: tytuł „Planer”, nowy Arkusz „Planer – dane”, przykładowe e-maile @firma.pl, klucze przeglądarki `planer.*` (jednorazowo znikają zapamiętane: skala, „Od”, widok, metoda). Wersje wszystkich plików: 2026-11-06. Działanie bez zmian. | wszystkie poza Styles |
 | 05.11 | Repo | Kod w repozytorium; specyfikacja (SPEC.md); testy serwera i przeglądarki na atrapie Apps Script; manifest `appsscript.json`. Kod planera bez zmian. | — |
 | 05.11 | Karta projektu | Klik obok okna zamyka kartę, jeśli nic w niej nie zmieniłeś; ze zmianami okno zostaje i pokazuje „Masz niezapisane zmiany: Zapisz albo Anuluj”. | js-karta, js-start |

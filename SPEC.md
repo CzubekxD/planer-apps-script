@@ -1,6 +1,6 @@
 # Planer — specyfikacja
 
-Stan: paczka **2026-11-06**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
+Stan: paczka **2026-11-06b**. Dokument opisuje, jak planer ma działać. Każde założenie oznaczone **[Z-n]** jest pilnowane testem (tabela na końcu); zmiana kodu, która łamie założenie, jest błędem, chyba że najpierw zmienimy ten dokument.
 
 ## 1. Po co to jest
 
@@ -19,6 +19,7 @@ Użytkownicy: właściciel planu (Mati) edytuje wszystko; koledzy z firmy ogląd
 - Przeciąganie kafla: w poziomie zmienia termin, w pionie wiersz w pasie (`rowHint`) albo pas innej osoby (zmiana osoby w roli). Niebieska ramka „tu wyląduje” = miejsce po upuszczeniu. Uchwyty na końcach zmieniają start/koniec.
 - **[Z-1]** Podwójne kliknięcie kafla otwiera kartę także przy drgnięciu myszy do 6 px. Przeciąganie zaczyna się dopiero od 6 px ruchu.
 - Status kafla: planowany / w trakcie / zakończony; opóźnienie „+N dni” wobec planu pierwotnego; kamienie milowe (osiągnięty, po terminie); kropka RAG.
+- **[Z-14]** Opóźnienie = koniec minus koniec planu pierwotnego; dla zakończonego liczy się od faktycznej daty zakończenia (zakończony przed planem nie ma plakietki).
 
 ### 2.2 Karta projektu
 - Metryczka: problem, cel, KPI, baseline → target, korzyść PLN/rok, rytm przeglądu Obeya, zakres w/poza, przeszkody, notatki.
@@ -33,7 +34,8 @@ Użytkownicy: właściciel planu (Mati) edytuje wszystko; koledzy z firmy ogląd
 - Zakładki (np. Portfolio, Warsztaty): osobne listy projektów w jednym planie.
 - Panel portfela: KPI, heatmapa obciążenia osób w miesiącach (Zespół), limit WIP, decyzje do podjęcia.
 - Obeya review (A3): podsumowanie do przeglądu.
-- Widok Miary: lead time (P50/P85/P95), wiek pracy w toku, WIP w tygodniach, przepustowość, terminowość, prognoza Monte Carlo dla planowanych projektów. Poniżej 10 zamkniętych projektów pokazuje „Mało danych”.
+- Widok Miary: lead time (P50/P85/P95), wiek projektów w trakcie, projekty w toku, przepustowość, terminowość, prognoza Monte Carlo dla planowanych projektów. Poniżej 10 zakończonych projektów pokazuje „Mało danych”.
+- **[Z-15]** Wykres „Projekty wg statusu w miesiącach”: 12 miesięcy wstecz (z bieżącym) + 3 do przodu, przełącznik **Stan w miesiącu** (słupki piętrowe, domyślnie) / **Przepływ** (diagram skumulowanego przepływu), wybór zapamiętany w przeglądarce. W miesiącu projekt ma jeden stan: zakończony (faktyczna data zakończenia w tym miesiącu) > w trakcie (po zobowiązaniu, przed zakończeniem) > planowany (na koniec miesiąca; od pierwszego wpisu w historii statusów, a bez historii tylko w bieżącym miesiącu). Przyszłe miesiące liczą się z terminów na kartach. Słowo „WIP” w Miarach nie występuje (limit WIP dotyczy osoby).
 - Eksport / Import planu jako JSON.
 
 ### 2.4 Historia zmian
@@ -129,7 +131,7 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 - **[Z-12]** Każdy `js-*` (poza js-start) kończy się linią `// ===== KONIEC <plik> (wersja X)` i `window.__planerParts.push('<plik>@X')`. Mapa `PLANER_FILES` w js-start zawiera dokładnie te wersje. `CODE_VERSION` = `PLAN_LIB_VERSION` = `PLANER_VERSION`. Plik ucięty przy wklejaniu albo w starej wersji → czerwony pasek z nazwą pliku.
 - Łapacz błędów w Index zamiast pustej strony pokazuje komunikat z listą plików, które wczytały się do końca.
 - Aktualizacja wyłącznie przez **Wdróż → Zarządzaj wdrożeniami → ołówek → Wersja: Nowa wersja → Wdróż**. „Nowe wdrożenie” zmienia adres. Adres `/dev` pokazuje ostatnio zapisany kod, ale pisze do **tego samego** Arkusza.
-- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 55) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
+- **[Z-13]** Testy w przeglądarce (`js-testy`, obecnie 63) idą w tle 1,5 s po starcie u właściciela, a z `?test` u każdego. Okno pojawia się wyłącznie przy NOK.
 
 ## 8. Czego świadomie nie ma
 - Jeden Index zamiast plików: temat zamknięty, zostaje podział na pliki.
@@ -159,3 +161,5 @@ Kod trafia do edytora Apps Script przez ręczne wklejenie plików (bez clasp). D
 | Z-11 brak Arkusza | server: `Arkusz niedostępny…`; e2e: `brak Arkusza…` |
 | Z-12 kontrola wklejenia | server: `kontrola wklejenia…`, `doGet skleja…`; e2e: `ucięty plik…`, `stary Code.gs…` |
 | Z-13 testy w przeglądarce | e2e: `start: wszystkie testy w przeglądarce OK…` |
+| Z-14 opóźnienie | js-testy (sekcja „opóźnienie”) |
+| Z-15 wykres statusów | js-testy (sekcja „Miary”); e2e: `Miary: wykres wg statusu…` |

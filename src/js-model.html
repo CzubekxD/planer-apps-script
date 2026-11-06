@@ -203,7 +203,9 @@ const dateToPx = (date) => DATE_LIB.toPx(date, axisNow());
 const pxToDate = (px) => DATE_LIB.fromPx(px, axisNow());
 
 // Opóźnienie tylko dla projektów w trakcie (planowane nie mają planu pierwotnego)
-const delayDays = p => (p.status !== 'planned' && p.baselineEnd && p.end) ? diffDays(p.baselineEnd, p.end) : 0;
+// Opóźnienie wobec planu pierwotnego; zakończony liczy się od faktycznej daty zakończenia (koniec w danych jest wyłączny)
+const actualEnd = p => (p.status === 'done' && p.doneAt) ? addDays(p.doneAt, 1) : p.end;
+const delayDays = p => (p.status !== 'planned' && p.baselineEnd && actualEnd(p)) ? diffDays(p.baselineEnd, actualEnd(p)) : 0;
 // Koniec efektywny: dla zakończonych data zamknięcia (do obciążenia i przepływu)
 const effEnd = p => (p.status === 'done' && p.doneAt) ? new Date(Math.min(p.end, addDays(p.doneAt, 1))) : p.end;
 const viewEnd = () => new Date(AppState.globalStartDate.getFullYear(), AppState.globalStartDate.getMonth() + AppState.horizonMonths, 1);
@@ -611,5 +613,5 @@ function load(done) {
      .loadPlan();
 }
 
-// ===== KONIEC js-model (wersja 2026-11-06) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-model@2026-11-06');
+// ===== KONIEC js-model (wersja 2026-11-06b) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-model@2026-11-06b');

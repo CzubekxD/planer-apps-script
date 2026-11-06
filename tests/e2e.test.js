@@ -23,7 +23,7 @@ test('start: wszystkie testy w przeglądarce OK, brak czerwonego paska i błęd�
   const res = await page.evaluate(() => runTests());
   const bad = res.filter(r => !r.ok);
   assert.deepEqual(bad, [], 'testy NOK w js-testy');
-  assert.ok(res.length >= 55, `testów: ${res.length}`);   // stan na paczkę 05g: 55
+  assert.ok(res.length >= 63, `testów: ${res.length}`);   // stan na paczkę 06b: 63
   assert.equal(await alarmText(page), '');
   assert.deepEqual(page.errors, []);
   assert.equal(await page.locator('.klocek').count(), 1);
@@ -140,4 +140,25 @@ test('podwójne kliknięcie kafla (z drgnięciem myszy do 6 px) otwiera kartę',
     assert.equal(await page.evaluate(() => document.getElementById('projektModal').classList.contains('active')), true, `drgnięcie ${jitter} px`);
     await page.close2();
   }
+});
+
+test('Miary: wykres wg statusu w miesiącach, przełącznik stan / przepływ zapamiętany po odświeżeniu', async () => {
+  const gas = createGas();
+  const iso = d => d.toISOString().slice(0, 10), day = n => iso(new Date(Date.now() + n * 864e5));
+  seed(gas, proj('a', 'W trakcie', { status: 'ongoing', start: day(-40), end: day(30), startedAt: day(-40), baselineStart: day(-40), baselineEnd: day(30) }),
+    proj('b', 'Planowany', { start: day(60), end: day(90), history: [{ date: day(-10), status: 'planned' }] }));
+  const page = await openPlaner(gas);
+  await page.click('[data-view="miary"]');
+  const karta = page.locator('.mi-status');
+  assert.equal(await karta.count(), 1, 'karta wykresu statusów');
+  assert.equal(await page.locator('text=WIP portfela').count(), 0, 'stary wykres „WIP portfela” zniknął');
+  assert.equal(await karta.locator('svg.st-slupki').count(), 1, 'domyślnie: stan w miesiącu (słupki)');
+  assert.equal(await karta.locator('svg.st-slupki rect.st-seg').count() > 0, true, 'są segmenty słupków');
+  await karta.locator('button', { hasText: 'Przepływ' }).click();
+  assert.equal(await page.locator('.mi-status svg.st-cfd').count(), 1, 'po kliknięciu: przepływ');
+  await page.reload();
+  await page.waitForFunction(() => typeof AppState !== 'undefined' && document.querySelector('.mi-status'));
+  assert.equal(await page.locator('.mi-status svg.st-cfd').count(), 1, 'wybór zapamiętany');
+  assert.deepEqual(page.errors, []);
+  await page.close2();
 });
