@@ -216,8 +216,29 @@ test('KPI: „Zakończone z opóźnieniem” = zakończone w ostatnich 90 dniach
   const k = computeKpi(computeDecisions(ps, SO_DZIS, SO_MIES), ps, SO_DZIS, SO_MIES.slice(0, 1));
   eq([k.doneLate, k.delayed], [2, 1]);
 });
-test('stan: planowany z terminem z karty w przeszłości zostaje „+N” w bieżącym i przyszłych miesiącach (jak w Miarach)', () =>
-  eq(computeLoad(SO_MIES, [SO('planned', 'Jan', { title: 'Stary plan', start: '2026-10-01', end: '2026-11-05' })], SO_DZIS).map(r => `${r.counts}|${r.planned}`), ['0,0|1,1']));
+// [Z-21] Planowany, któremu minęła data startu, zostaje planowanym od dziś w przód — tak samo na heatmapie i w Miarach, bez wpływu na limit
+test('stan [Z-21]: planowany z terminem z karty w przeszłości zostaje planowanym od dziś w przód (heatmapa, Miary, KPI, decyzje)', () => {
+  const ps = [SO('planned', 'Jan', { title: 'Stary plan', start: '2026-10-01', end: '2026-11-05', history: [{ date: '2026-09-20', status: 'planned' }] })];
+  const miary = statusByMonth(ps, SO_DZIS).filter(r => ['2026-11-01', '2026-12-01', '2027-01-01'].includes(L.toISO(r.from))).map(r => `P${r.planned}T${r.ongoing}`);
+  const dec = computeDecisions(ps, SO_DZIS, SO_MIES);
+  eq([computeLoad(SO_MIES, ps, SO_DZIS).map(r => `${r.counts}|${r.planned}`), miary, computeKpi(dec, ps, SO_DZIS, SO_MIES.slice(0, 1)).ongoing, dec.filter(d => d.typ === 'Przeciążenie').length],
+    [['0,0|1,1'], ['P1T0', 'P1T0', 'P1T0'], 0, 0]);
+});
+test('stan: jeden portfel naraz w heatmapie, decyzjach, KPI i Miarach (planowany po dacie startu wszędzie jako planowany)', () => {
+  const ps = SO_PORTFEL(), dec = computeDecisions(ps, SO_DZIS, SO_MIES), k = computeKpi(dec, ps, SO_DZIS, SO_MIES.slice(0, 1));
+  const lis = statusByMonth(ps, SO_DZIS).find(x => L.toISO(x.from) === '2026-11-01');
+  eq({
+    heatmapa: computeLoad(SO_MIES, ps, SO_DZIS).map(r => `${r.name} ${r.counts}|${r.planned}`),
+    decyzje: dec.filter(d => d.typ === 'Przeciążenie').map(d => d.text),
+    kpi: [k.ongoing, k.overloaded],
+    miary: [lis.planned, lis.ongoing, lis.done]
+  }, {
+    heatmapa: ['Jan 3,1|1,1', 'Ewa 1,1|0,1'],
+    decyzje: ['Jan: 3 równoległych projektów w Lis (limit 2) — A w trakcie, B po terminie, C zakończony w listopadzie.'],
+    kpi: [3, 1],
+    miary: [2, 3, 1]
+  });
+});
 test('stan: czas realizacji = od zobowiązania do zakończenia, włącznie', () => eq([leadTime(SO_PORTFEL()[2]), leadTime(SO_PORTFEL()[0])], [27, null]));
 test('stan: projekty w toku dziś (Miary) = ta sama definicja co „W trakcie dziś”', () => {
   const ps = SO_PORTFEL();
@@ -287,5 +308,5 @@ function runTests() {
   return res;
 }
 
-// ===== KONIEC js-testy (wersja 2026-11-06k) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
-window.__planerParts.push('js-testy@2026-11-06k');
+// ===== KONIEC js-testy (wersja 2026-11-06l) — jeśli w edytorze nie widzisz tej linii, plik nie wkleił się do końca =====
+window.__planerParts.push('js-testy@2026-11-06l');

@@ -2,10 +2,11 @@
 
 Od najnowszych. „Pliki” = co podmienić w edytorze Apps Script. Pełny opis z krokami wdrożenia: dokument Claude Docs „Planer – opis zmian”.
 
-Aktualna paczka: **2026-11-06k**
+Aktualna paczka: **2026-11-06l**
 
 | Data | Obszar | Zmiana | Pliki |
 |---|---|---|---|
+| 06.11 | Portfel | Zapisana reguła (#5): planowany, któremu minęła data startu, a nikt go nie zaczął, zostaje planowanym od dziś w przód — szare „+N” na heatmapie i „planowany” w Miarach w bieżącym i przyszłych miesiącach (założenie [Z-21] w SPEC, opis w CONTEXT). Jeden wspólny test portfela sprawdza naraz heatmapę, decyzje, KPI i Miary. Działanie planera bez zmian. | js-testy, js-start |
 | 06.11 | Portfel | Nowy kafelek KPI „Zakończone z opóźnieniem (90 dni)” (#2): projekty zakończone w ostatnich 90 dniach po końcu planu pierwotnego. „Opóźnione” zostaje tylko dla projektów w trakcie. | js-portfel, js-testy, js-start |
 | 06.11 | Porządki | Zgłoszenie #11: jedno `renderAll()` w „Podgląd jako” (bez zmiany działania) oraz jedno znaczenie nazw: „w trakcie” to `ongoing` w KPI i decyzjach Portfela, lista wieku w Miarach to `ages`, okno Obeya to `obeyaRows`. Działanie bez zmian. | js-historia, js-portfel, js-miary, js-testy, js-start |
 | 06.11 | Daty | Dokończenie porządków (#6): `endIncl` w PlanLib to świadome odstępstwo od TERM (serwer nie ma `js-model`). Opisane w komentarzu i SPEC Z-19; nowe testy sprawdzają zgodność z `TERM.lastDay` na granicach dat (koniec miesiąca i roku, luty przestępny, jednodniowy, zmiana czasu) i że w `.gs` nie ma innej arytmetyki dat. Działanie bez zmian. | PlanLib.gs, Code.gs, js-start |

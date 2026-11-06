@@ -27,7 +27,7 @@ _Avoid_: portfel, obszar, dział
 ## Termin i stan
 
 **Planowany**:
-Projekt przed zobowiązaniem: pokazuje, do czego się przygotowujemy i co będzie następne, a jego termin można dowolnie przesuwać.
+Projekt przed zobowiązaniem: pokazuje, do czego się przygotowujemy i co będzie następne, a jego termin można dowolnie przesuwać. Planowany, któremu minęła data startu z karty, a nikt go nie zaczął, zostaje planowanym od dziś w przód (heatmapa, Miary), aż zapadnie zobowiązanie albo zostanie usunięty; nigdy nie obciąża ludzi.
 _Avoid_: backlog, szkic
 
 **Zobowiązanie**:
